@@ -29,6 +29,10 @@ describe("particleDraw", () => {
   const r = new Uint8Array(64).fill(1);
   const owner = new Uint8Array(32).fill(2);
 
+  it("matches the Rust known vector bit-for-bit", () => {
+    expect(particleDraw(r, 7n, owner, 1, 3)).toBe(2_211_064_809_742_104_174n);
+  });
+
   it("is deterministic and input-sensitive", () => {
     const d = particleDraw(r, 7n, owner, 1, 3);
     expect(particleDraw(r, 7n, owner, 1, 3)).toBe(d);

@@ -156,8 +156,7 @@ mod tests {
         let r = [1u8; 64];
         let owner = Pubkey::new_from_array([2u8; 32]);
         let d = particle_draw(&r, 7, &owner, 1, 3);
-        println!("known vector draw = {d}");
-        assert_eq!(d, particle_draw(&r, 7, &owner, 1, 3));
+        assert_eq!(d, 2_211_064_809_742_104_174);
     }
 
     #[test]
