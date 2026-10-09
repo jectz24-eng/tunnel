@@ -2,7 +2,7 @@
  * Instruction builders. Every TUNNEL instruction the app, keeper, scripts and
  * tests send is built here, with accounts ordered from the IDL.
  */
-import { BN } from "@coral-xyz/anchor";
+import BN from "bn.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,

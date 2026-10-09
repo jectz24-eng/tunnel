@@ -19,9 +19,11 @@
     "@coral-xyz/anchor": "0.32.1",
     "@noble/hashes": "2.4.0",
     "@solana/spl-token": "0.4.15",
-    "@solana/web3.js": "1.99.0"
+    "@solana/web3.js": "1.99.0",
+    "bn.js": "^5.2.5"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.2.0",
     "fast-check": "4.10.2",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
