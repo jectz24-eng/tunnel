@@ -4,13 +4,14 @@
  * overwrites derived rows, so the database converges on chain state even if
  * events were missed, duplicated or arrived out of order.
  */
-import type { Connection, PublicKey } from "@solana/web3.js";
+import { PublicKey as PK, type Connection, type PublicKey } from "@solana/web3.js";
 import type { PrismaClient } from "@tunnel/db";
 import {
   computePayout,
   fetchProtocol,
   fetchRoundPositions,
   fetchRounds,
+  positionPda,
   toHex,
   type PositionAccount,
   type RoundAccount,
@@ -49,6 +50,7 @@ export class Reconciler {
     // Rounds to refresh: the recent window, anything not yet final in the DB, and anything events touched.
     const next = protocol.nextRoundId;
     const ids = new Set<bigint>(this.dirtyRounds);
+    const touched = new Set<bigint>(this.dirtyRounds);
     for (let i = next - BigInt(this.scanWindow); i < next; i++) if (i >= 0n) ids.add(i);
     const open = await this.db.round.findMany({
       where: { OR: [{ status: { notIn: [...TERMINAL] } }, { swept: false, participants: { gt: 0 } }] },
@@ -73,15 +75,20 @@ export class Reconciler {
         prev.claims !== r.claims ||
         prev.totalLamports !== r.totalLamports ||
         prev.swept !== r.swept ||
-        prev.totalSuccessWeight !== r.totalSuccessWeight;
+        prev.totalSuccessWeight !== r.totalSuccessWeight ||
+        touched.has(r.id) ||
+        (await this.dbBehindChain(r));
       await this.db.round.upsert({
         where: { id: r.id },
         create: { id: r.id, ...roundRow(r), reconciledSlot: slot },
         update: { ...roundRow(r), reconciledSlot: slot },
       });
       if (changed && r.participants > 0) {
-        const positions = await fetchRoundPositions(this.connection, r.id, this.programId);
-        for (const p of positions) {
+        const live = await fetchRoundPositions(this.connection, r.id, this.programId);
+        // Claimed positions are closed onchain; rebuild them from their permanent events.
+        const liveOwners = new Set(live.map((p) => p.owner.toBase58()));
+        const closed = (await positionsFromEvents(this.db, r.id, this.programId)).filter((p) => !liveOwners.has(p.owner.toBase58()));
+        for (const p of [...live, ...closed]) {
           await this.db.position.upsert({
             where: { roundId_owner: { roundId: r.id, owner: p.owner.toBase58() } },
             create: { roundId: r.id, owner: p.owner.toBase58(), ...positionRow(r, p) },
@@ -97,6 +104,17 @@ export class Reconciler {
       this.dirtyOwners.clear();
       await this.recomputeWalletStats(owners);
     }
+  }
+
+  /** True when stored positions lag the round (e.g. settled or claimed before we last looked). */
+  private async dbBehindChain(r: RoundAccount): Promise<boolean> {
+    if (r.participants === 0) return false;
+    const [rows, settled, claimed] = await Promise.all([
+      this.db.position.count({ where: { roundId: r.id } }),
+      this.db.position.count({ where: { roundId: r.id, settled: true } }),
+      this.db.position.count({ where: { roundId: r.id, claimed: true } }),
+    ]);
+    return rows < r.participants || settled < r.positionsSettled || claimed < r.claims;
   }
 
   /** Aggregates are recomputed from Position rows, never incremented, so they cannot drift. */
@@ -133,6 +151,52 @@ export class Reconciler {
     }
     log.debug({ owners: owners.length }, "wallet stats recomputed");
   }
+}
+
+/**
+ * Reconstructs positions from indexed events — used for positions whose
+ * account was closed by `claim` (and so can no longer be read from chain).
+ */
+export async function positionsFromEvents(db: PrismaClient, roundId: bigint, programId: PublicKey): Promise<PositionAccount[]> {
+  const events = await db.indexedEvent.findMany({
+    where: { roundId, name: { in: ["ParticlesDeployed", "PositionSettled", "RewardClaimed"] } },
+    orderBy: { id: "asc" },
+  });
+  const by = new Map<string, PositionAccount>();
+  for (const e of events) {
+    if (!e.owner) continue;
+    const d = e.data as Record<string, any>;
+    const p =
+      by.get(e.owner) ??
+      ({
+        address: positionPda(roundId, new PK(e.owner), programId),
+        owner: new PK(e.owner),
+        roundId,
+        particles: [0, 0, 0],
+        lamports: 0n,
+        settled: false,
+        successes: [0, 0, 0],
+        successWeight: 0n,
+        claimed: false,
+        lamportsPaid: 0n,
+        tokensPaid: 0n,
+      } satisfies PositionAccount);
+    if (e.name === "ParticlesDeployed") {
+      p.particles = (d.position_particles as (string | number)[]).map(Number);
+      p.lamports += BigInt(d.lamports);
+    } else if (e.name === "PositionSettled") {
+      p.particles = (d.particles as (string | number)[]).map(Number);
+      p.successes = (d.successes as (string | number)[]).map(Number);
+      p.successWeight = BigInt(d.success_weight);
+      p.settled = true;
+    } else if (e.name === "RewardClaimed") {
+      p.claimed = true;
+      p.lamportsPaid = BigInt(d.lamports);
+      p.tokensPaid = BigInt(d.tokens);
+    }
+    by.set(e.owner, p);
+  }
+  return [...by.values()];
 }
 
 function protocolRow(p: NonNullable<Awaited<ReturnType<typeof fetchProtocol>>>) {

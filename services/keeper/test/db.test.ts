@@ -15,7 +15,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decodeTx, rowsFromTx, writeTx } from "../src/ingest";
-import { Reconciler } from "../src/reconciler";
+import { Reconciler, positionsFromEvents } from "../src/reconciler";
 
 let pg: PGlite;
 let server: PGLiteSocketServer;
@@ -124,5 +124,27 @@ describe("wallet aggregates", () => {
     await rec.recomputeWalletStats([owner.toBase58()]);
     const s = await db.walletStats.findUniqueOrThrow({ where: { owner: owner.toBase58() } });
     expect(s).toMatchObject({ roundsPlayed: 1, particles: 7n, successes: 1n, failures: 6n, lamportsCommitted: 70_000_000n, lamportsReceived: 0n, tokensMined: 416_000_000n, claimableRounds: 1 });
+  });
+});
+
+describe("closed positions", () => {
+  it("are rebuilt from events after claim closes the account", async () => {
+    const who = Keypair.generate().publicKey;
+    const ev = (name: string, data: Record<string, unknown>) => ({ name, data });
+    await writeTx(db, decodeTx(TUNNEL_PROGRAM_ID, "sigP1", 300, 1_700_000_300, logsFor([
+      ev("ParticlesDeployed", { round_id: new BN(9), owner: who, barrier: 0, count: 10, lamports: new BN(100_000_000), position_particles: [10, 0, 0], round_total_lamports: new BN(100_000_000) }),
+    ])));
+    await writeTx(db, decodeTx(TUNNEL_PROGRAM_ID, "sigP2", 301, 1_700_000_301, logsFor([
+      ev("ParticlesDeployed", { round_id: new BN(9), owner: who, barrier: 2, count: 2, lamports: new BN(20_000_000), position_particles: [10, 0, 2], round_total_lamports: new BN(120_000_000) }),
+    ])));
+    await writeTx(db, decodeTx(TUNNEL_PROGRAM_ID, "sigP3", 302, 1_700_000_302, logsFor([
+      ev("PositionSettled", { round_id: new BN(9), owner: who, particles: [10, 0, 2], successes: [8, 0, 1], success_weight: new BN(13) }),
+    ])));
+    await writeTx(db, decodeTx(TUNNEL_PROGRAM_ID, "sigP4", 303, 1_700_000_303, logsFor([
+      ev("RewardClaimed", { round_id: new BN(9), owner: who, lamports: new BN(114_000_000), tokens: new BN(416_000_000), outcome: 1 }),
+    ])));
+    const [p] = await positionsFromEvents(db, 9n, TUNNEL_PROGRAM_ID);
+    expect(p.owner.equals(who)).toBe(true);
+    expect(p).toMatchObject({ particles: [10, 0, 2], lamports: 120_000_000n, settled: true, successes: [8, 0, 1], successWeight: 13n, claimed: true, lamportsPaid: 114_000_000n, tokensPaid: 416_000_000n });
   });
 });

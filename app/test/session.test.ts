@@ -33,7 +33,7 @@ describe("Sign-In With Solana", () => {
   it("rejects a tampered nonce or timestamp", () => {
     const msg = buildSignInMessage(address, origin);
     expect(checkSignInMessage(msg.replace(/Issued At: .+/, "Issued At: 2030-01-01T00:00:00.000Z"), address, origin)).toBe("invalid nonce");
-    expect(checkSignInMessage(msg.replace(/Nonce: (\w+)\.(.+)/, "Nonce: $1.AAAA"), address, origin)).toBe("invalid nonce");
+    expect(checkSignInMessage(msg.replace(/Nonce: ([^.\n]+)\.(.+)/, "Nonce: $1.AAAA"), address, origin)).toBe("invalid nonce");
   });
 
   it("expires after five minutes", () => {

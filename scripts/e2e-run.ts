@@ -1,5 +1,6 @@
 /**
- * Full devnet integration run against the REAL ORAO VRF network:
+ * Full integration run on devnet (live ORAO VRF network) or localnet (cloned
+ * ORAO program + scripts/local-vrf-fulfiller.ts):
  *
  *   two fresh wallets → deploy particles on different barriers → wait for the
  *   round to close → request ORAO randomness → wait for real fulfillment →
@@ -7,12 +8,13 @@
  *   SOL + $TUNNEL → assert balances → attempt a duplicate claim (must fail).
  *
  * Every transaction signature is printed with an explorer link and written to
- * docs/DEVNET_RUN.md. Requires the program deployed + initialized + funded on
- * devnet, and an operator wallet with devnet SOL (KEEPER/KEYPAIR_PATH).
+ * docs/<CLUSTER>_RUN.md. Requires the program deployed + initialized + funded,
+ * and an operator wallet with SOL (devnet: KEYPAIR_PATH; localnet: keys/).
  * It cranks rounds itself, so it does not depend on the keeper running (but
  * tolerates one running concurrently).
  *
- *   npx tsx scripts/devnet-e2e.ts
+ *   npx tsx scripts/e2e-run.ts
+ *   SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/e2e-run.ts
  */
 import { getAccount, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction } from "@solana/web3.js";
@@ -34,6 +36,9 @@ import {
   verifyRound,
 } from "../packages/sdk/src";
 import { ROOT, connection, explorer, guardCluster, loadKeypair, sendIxs } from "./lib";
+import { localKey } from "./local-setup";
+
+const BENIGN = /RoundNotOpen|RoundNotClosed|NotAwaitingRandomness|PositionAlreadySettled|NotResolving|RoundScheduleConflict|already in use/;
 
 const log: string[] = [];
 function record(step: string, sig: string, cluster: string) {
@@ -46,8 +51,19 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function main() {
   const conn = connection();
   const cluster = await guardCluster(conn);
-  if (cluster !== "devnet") throw new Error("devnet-e2e only runs against devnet");
-  const operator = loadKeypair();
+  if (cluster !== "devnet" && cluster !== "localnet") throw new Error("e2e-run only runs against devnet or localnet");
+  const operator = cluster === "localnet" ? localKey("operator") : loadKeypair();
+
+  /** Crank steps race with a running keeper; "already done" errors are fine. */
+  const crank = async (step: string, ixs: Parameters<typeof sendIxs>[2]) => {
+    try {
+      record(step, await sendIxs(conn, operator, ixs), cluster);
+    } catch (e) {
+      const text = String(e) + ((e as any).logs ?? []).join(" ");
+      if (!BENIGN.test(text)) throw e;
+      console.log(`${step}: already done by the keeper`);
+    }
+  };
   const tunnel = new TunnelInstructions();
   const protocol = await fetchProtocol(conn, tunnel.programId);
   if (!protocol) throw new Error("program not initialized on devnet (docs/DEPLOYMENT.md)");
@@ -69,11 +85,7 @@ async function main() {
       if (r && r.status === "open" && r.openTs <= now && r.closeTs - now >= 20) roundId = id;
     }
     if (roundId == null && now >= p.lastRoundOpenTs) {
-      try {
-        record(`open_round #${p.nextRoundId}`, await sendIxs(conn, operator, [tunnel.openRound(operator.publicKey, p.nextRoundId)]), cluster);
-      } catch (e) {
-        console.log("open_round raced with another cranker:", String(e).slice(0, 120));
-      }
+      await crank(`open_round #${p.nextRoundId}`, [tunnel.openRound(operator.publicKey, p.nextRoundId)]);
     }
     if (roundId == null) await sleep(3000);
   }
@@ -102,13 +114,13 @@ async function main() {
     console.log("late deposit correctly rejected");
   }
   r = (await fetchRound(conn, roundId, tunnel.programId))!;
-  if (r.status === "open") record(`close_round #${roundId}`, await sendIxs(conn, operator, [tunnel.closeRound(roundId)]), cluster);
+  if (r.status === "open") await crank(`close_round #${roundId}`, [tunnel.closeRound(roundId)]);
 
   // 5. request ORAO randomness and wait for the real network to fulfil it
   r = (await fetchRound(conn, roundId, tunnel.programId))!;
   if (r.status === "closed") {
     const vrfTreasury = await fetchOraoTreasury(conn);
-    record("request_randomness (ORAO VRF)", await sendIxs(conn, operator, [tunnel.requestRandomness({ cranker: operator.publicKey, roundId, vrfSeed: r.vrfSeed, vrfTreasury })]), cluster);
+    await crank("request_randomness (ORAO VRF)", [tunnel.requestRandomness({ cranker: operator.publicKey, roundId, vrfSeed: r.vrfSeed, vrfTreasury })]);
   }
   const t0 = Date.now();
   while (!(await fetchOraoRandomness(conn, r.vrfSeed)).fulfilled) {
@@ -117,14 +129,18 @@ async function main() {
   }
   console.log(`ORAO fulfilled after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   r = (await fetchRound(conn, roundId, tunnel.programId))!;
-  if (r.status === "closed" || r.status === "awaitingRandomness") record("reveal_randomness", await sendIxs(conn, operator, [tunnel.revealRandomness(roundId, r.vrfSeed)]), cluster);
+  if (r.status === "closed" || r.status === "awaitingRandomness") await crank("reveal_randomness", [tunnel.revealRandomness(roundId, r.vrfSeed)]);
 
   // 6. settle + finalize
   for (const p of await fetchRoundPositions(conn, roundId, tunnel.programId)) {
-    if (!p.settled) record(`settle_position ${p.owner.toBase58().slice(0, 6)}…`, await sendIxs(conn, operator, [tunnel.settlePosition(roundId, p.owner)]), cluster);
+    if (!p.settled) await crank(`settle_position ${p.owner.toBase58().slice(0, 6)}…`, [tunnel.settlePosition(roundId, p.owner)]);
   }
   r = (await fetchRound(conn, roundId, tunnel.programId))!;
-  if (r.status === "resolving") record("finalize_round", await sendIxs(conn, operator, [tunnel.finalizeRound(roundId)]), cluster);
+  for (let i = 0; i < 20 && (await fetchRound(conn, roundId, tunnel.programId))!.status === "resolving"; i++) {
+    const rr = (await fetchRound(conn, roundId, tunnel.programId))!;
+    if (rr.positionsSettled === rr.participants) await crank("finalize_round", [tunnel.finalizeRound(roundId)]);
+    else await sleep(1500);
+  }
   r = (await fetchRound(conn, roundId, tunnel.programId))!;
 
   // 7. independent verification of every particle (only our positions are guaranteed unclaimed)
@@ -165,9 +181,13 @@ async function main() {
     results.push(`- user ${"AB"[i]}: particles ${pos.particles.join("/")}, tunnelled ${pos.successes.join("/")}, paid **${formatSol(paidSol)} SOL** + **${formatTunnel(paidTok)} $TUNNEL** (matches SDK), duplicate claim rejected`);
   }
 
-  const md = `# Devnet integration run
+  const where =
+    cluster === "devnet"
+      ? "Solana devnet with the live ORAO VRF network"
+      : "a local solana-test-validator with the real ORAO VRF program cloned from devnet; fulfillment signed by a local authority key (scripts/local-vrf-fulfiller.ts)";
+  const md = `# ${cluster === "devnet" ? "Devnet" : "Localnet"} integration run
 
-Run at ${new Date().toISOString()} against Solana devnet with the live ORAO VRF network.
+Run at ${new Date().toISOString()} against ${where}.
 
 Program \`${tunnel.programId.toBase58()}\` · round **#${roundId}** · outcome **${r.outcome}** · successes I/II/III = ${r.successes.join(" / ")}
 
@@ -179,8 +199,9 @@ ${results.join("\n")}
 ## Transactions
 ${log.join("\n")}
 `;
-  writeFileSync(join(ROOT, "docs", "DEVNET_RUN.md"), md);
-  console.log("\nwrote docs/DEVNET_RUN.md");
+  const out = `${cluster.toUpperCase()}_RUN.md`;
+  writeFileSync(join(ROOT, "docs", out), md);
+  console.log(`wrote docs/${out}`);
 }
 
 main().catch((e) => {

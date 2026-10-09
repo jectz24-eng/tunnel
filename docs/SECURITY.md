@@ -123,7 +123,7 @@ The program is deployed upgradeable. **The upgrade authority can replace program
 - [x] Events for every state change
 - [ ] **Independent external audit** (required)
 - [ ] `anchor test` suite run green on localnet (requires toolchain — see DEPLOYMENT.md)
-- [ ] Devnet end-to-end run with real ORAO (`scripts/devnet-e2e.ts`) recorded in `docs/DEVNET_RUN.md`
+- [ ] Devnet end-to-end run with real ORAO (`scripts/e2e-run.ts`) recorded in `docs/DEVNET_RUN.md`
 - [ ] Upgrade authority moved to a multisig (Squads) with timelock, or made immutable
 - [ ] Admin and treasury moved to multisigs
 - [ ] Fuzzing (e.g. Trident) of settlement and claim paths
@@ -140,7 +140,7 @@ The program is deployed upgradeable. **The upgrade authority can replace program
 | R1 | Upgrade authority can change all program logic | Critical | Open. Multisig + timelock, then consider immutability |
 | R2 | ORAO quorum collusion gives a participant a free option (withhold → refund) | High | Open. Options: combine two independent VRFs (XOR); on timeout refund minus fee; monitor ORAO request/fulfilment latency |
 | R3 | No independent audit | Critical | Open. Blocking for mainnet |
-| R4 | Anchor/ORAO code compiled but not yet executed in this environment (no Solana toolchain on the build machine at time of writing) | High | Open. Run `anchor build`, `cargo test`, `anchor test`, `scripts/devnet-e2e.ts` |
+| R4 | Anchor/ORAO code compiled but not yet executed in this environment (no Solana toolchain on the build machine at time of writing) | High | Open. Run `anchor build`, `cargo test`, `anchor test`, `scripts/e2e-run.ts` |
 | R5 | Admin can redirect future fee withdrawals via `set_treasury` | Medium | Admin multisig; emit + monitor `TreasuryChanged` |
 | R6 | Crank operating cost: ~0.003 SOL rent per Round account (never reclaimed) + ORAO fee per round ≈ 4–7 SOL/day at 1,440 rounds/day; plus one `settle_position` per participant | Medium (economic) | Consider closing old Round accounts after an archival period; batch settlement; fee covers cost at sufficient volume |
 | R7 | Rounds stall (not lose funds) if nobody cranks | Low | Permissionless cranks, keeper health alerts, timeout refunds |

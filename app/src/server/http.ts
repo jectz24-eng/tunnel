@@ -26,6 +26,7 @@ export async function indexed<T>(fn: (db: ReturnType<typeof getDb>) => Promise<T
 }
 
 export function intParam(v: string | null, def: number, min: number, max: number) {
+  if (v === null || v.trim() === "") return def; // Number(null) is 0, not "missing"
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.floor(n))) : def;
 }

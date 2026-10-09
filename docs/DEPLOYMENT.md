@@ -46,7 +46,7 @@ npm run keeper          # health: http://localhost:8787/health
 ```
 Integration proof with real transactions:
 ```
-npx tsx scripts/devnet-e2e.ts      # writes docs/DEVNET_RUN.md with explorer links
+npx tsx scripts/e2e-run.ts      # writes docs/DEVNET_RUN.md with explorer links
 ```
 Frontend: `app/.env.local` from `app/.env.example` (`NEXT_PUBLIC_CLUSTER=devnet`, `DATABASE_URL`, `SESSION_SECRET`). Deploy to any Node host or Vercel (root `app`, build `npm run build -w app`; the monorepo root must be included for workspaces).
 
