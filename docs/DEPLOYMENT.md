@@ -28,6 +28,23 @@ npm run dev                          # http://localhost:3000 (set NEXT_PUBLIC_CL
 npm run test:e2e                     # Playwright (desktop + mobile)
 ```
 
+### Full local stack (playable, no faucet)
+Five processes; start them in this order:
+```
+# WSL:     validator with TUNNEL preloaded + ORAO cloned (first run: add --reset)
+bash scripts/local-validator.sh $(npx tsx -e "import('./scripts/local-setup.ts').then(m=>console.log(m.localKey('operator').publicKey.toBase58()))")
+# Windows: one-time protocol bootstrap (ORAO local network, $TUNNEL, init, 600M reserve)
+SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/local-setup.ts
+npm run db:local                                                       # Postgres (PGlite)
+SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/local-vrf-fulfiller.ts   # plays ORAO's fulfillment network
+SOLANA_RPC_URL=http://127.0.0.1:8899 SOLANA_WS_URL=ws://127.0.0.1:8900 KEEPER_KEYPAIR=keys/localnet-keeper.json npm run keeper
+npm run dev                                                            # app/.env.local: NEXT_PUBLIC_CLUSTER=localnet, NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8899
+```
+Wallet: Phantom → Settings → Developer Settings → Testnet Mode on → network **Solana Localnet**. Fund it:
+`SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/local-airdrop.ts <your address> 50`.
+Full scripted round with verification: `SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/e2e-run.ts` (writes `docs/LOCALNET_RUN.md`).
+Local keys live in `keys/` (gitignored); they hold only local test SOL.
+
 ## 2. DEVNET
 ```
 solana config set --url devnet
