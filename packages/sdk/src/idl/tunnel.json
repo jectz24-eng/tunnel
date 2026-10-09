@@ -1,0 +1,2075 @@
+{
+  "address": "GyywTr1c6yTJPSxDiADUfawcpuQBQ6JPwMKaoC6WrhF9",
+  "metadata": {
+    "name": "tunnel",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "TUNNEL — quantum-inspired mining protocol on Solana"
+  },
+  "instructions": [
+    {
+      "name": "accept_admin",
+      "discriminator": [
+        112,
+        42,
+        45,
+        90,
+        116,
+        181,
+        13,
+        170
+      ],
+      "accounts": [
+        {
+          "name": "new_admin",
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim",
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol"
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "round_vault",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "tunnel_mint"
+        },
+        {
+          "name": "reward_vault",
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_round",
+      "discriminator": [
+        149,
+        14,
+        81,
+        88,
+        230,
+        226,
+        234,
+        37
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "slot_hashes"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "deploy_particles",
+      "discriminator": [
+        148,
+        24,
+        151,
+        62,
+        239,
+        235,
+        30,
+        137
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "round_vault",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        },
+        {
+          "name": "barrier",
+          "type": "u8"
+        },
+        {
+          "name": "count",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "finalize_round",
+      "discriminator": [
+        239,
+        160,
+        254,
+        11,
+        254,
+        144,
+        53,
+        148
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "round_vault",
+          "writable": true
+        },
+        {
+          "name": "treasury_vault",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "fund_reserve",
+      "discriminator": [
+        17,
+        82,
+        71,
+        222,
+        117,
+        210,
+        58,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "funder",
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "tunnel_mint"
+        },
+        {
+          "name": "reward_vault",
+          "writable": true
+        },
+        {
+          "name": "funder_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "tunnel_mint"
+        },
+        {
+          "name": "reward_vault",
+          "writable": true
+        },
+        {
+          "name": "treasury_vault",
+          "writable": true
+        },
+        {
+          "name": "program"
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "ProtocolParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "open_round",
+      "discriminator": [
+        66,
+        235,
+        123,
+        240,
+        8,
+        35,
+        185,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "round_vault",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "propose_admin",
+      "discriminator": [
+        121,
+        214,
+        199,
+        212,
+        87,
+        39,
+        117,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_admin",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "recover_round",
+      "discriminator": [
+        87,
+        173,
+        77,
+        57,
+        40,
+        45,
+        2,
+        160
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "vrf_request"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_randomness",
+      "discriminator": [
+        213,
+        5,
+        173,
+        166,
+        37,
+        236,
+        31,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "vrf_request",
+          "writable": true
+        },
+        {
+          "name": "vrf_config",
+          "writable": true
+        },
+        {
+          "name": "vrf_treasury",
+          "writable": true
+        },
+        {
+          "name": "vrf_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "reveal_randomness",
+      "discriminator": [
+        30,
+        130,
+        85,
+        220,
+        208,
+        80,
+        28,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "vrf_request"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_paused",
+      "discriminator": [
+        91,
+        60,
+        125,
+        192,
+        176,
+        225,
+        166,
+        218
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_treasury",
+      "discriminator": [
+        57,
+        97,
+        196,
+        95,
+        195,
+        206,
+        106,
+        136
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "settle_position",
+      "discriminator": [
+        33,
+        156,
+        74,
+        218,
+        215,
+        42,
+        112,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sweep_round",
+      "discriminator": [
+        199,
+        18,
+        226,
+        99,
+        17,
+        87,
+        2,
+        125
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "round_vault",
+          "writable": true
+        },
+        {
+          "name": "treasury_vault",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_params",
+      "discriminator": [
+        108,
+        178,
+        190,
+        95,
+        94,
+        203,
+        116,
+        20
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "ProtocolParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw_fees",
+      "discriminator": [
+        198,
+        212,
+        171,
+        109,
+        144,
+        215,
+        174,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "protocol"
+        },
+        {
+          "name": "treasury_vault",
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    },
+    {
+      "name": "Protocol",
+      "discriminator": [
+        45,
+        39,
+        101,
+        43,
+        115,
+        72,
+        131,
+        40
+      ]
+    },
+    {
+      "name": "Round",
+      "discriminator": [
+        87,
+        127,
+        165,
+        51,
+        73,
+        78,
+        116,
+        174
+      ]
+    },
+    {
+      "name": "RoundVault",
+      "discriminator": [
+        143,
+        169,
+        210,
+        32,
+        221,
+        123,
+        199,
+        119
+      ]
+    },
+    {
+      "name": "TreasuryVault",
+      "discriminator": [
+        86,
+        102,
+        19,
+        109,
+        56,
+        58,
+        144,
+        81
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AdminAccepted",
+      "discriminator": [
+        174,
+        12,
+        76,
+        139,
+        158,
+        99,
+        110,
+        254
+      ]
+    },
+    {
+      "name": "AdminProposed",
+      "discriminator": [
+        129,
+        249,
+        226,
+        227,
+        199,
+        82,
+        110,
+        243
+      ]
+    },
+    {
+      "name": "FeesWithdrawn",
+      "discriminator": [
+        234,
+        15,
+        0,
+        119,
+        148,
+        241,
+        40,
+        21
+      ]
+    },
+    {
+      "name": "ParamsUpdated",
+      "discriminator": [
+        2,
+        163,
+        138,
+        99,
+        135,
+        11,
+        136,
+        169
+      ]
+    },
+    {
+      "name": "ParticlesDeployed",
+      "discriminator": [
+        34,
+        45,
+        66,
+        0,
+        107,
+        41,
+        11,
+        37
+      ]
+    },
+    {
+      "name": "PauseChanged",
+      "discriminator": [
+        238,
+        188,
+        213,
+        78,
+        134,
+        209,
+        178,
+        218
+      ]
+    },
+    {
+      "name": "PositionSettled",
+      "discriminator": [
+        75,
+        100,
+        92,
+        189,
+        245,
+        116,
+        252,
+        221
+      ]
+    },
+    {
+      "name": "ProtocolInitialized",
+      "discriminator": [
+        173,
+        122,
+        168,
+        254,
+        9,
+        118,
+        76,
+        132
+      ]
+    },
+    {
+      "name": "RandomnessRequested",
+      "discriminator": [
+        10,
+        64,
+        183,
+        29,
+        104,
+        63,
+        90,
+        149
+      ]
+    },
+    {
+      "name": "RandomnessRevealed",
+      "discriminator": [
+        64,
+        201,
+        250,
+        123,
+        9,
+        234,
+        196,
+        41
+      ]
+    },
+    {
+      "name": "ReserveFunded",
+      "discriminator": [
+        15,
+        45,
+        175,
+        239,
+        65,
+        137,
+        203,
+        230
+      ]
+    },
+    {
+      "name": "RewardClaimed",
+      "discriminator": [
+        49,
+        28,
+        87,
+        84,
+        158,
+        48,
+        229,
+        175
+      ]
+    },
+    {
+      "name": "RoundClosed",
+      "discriminator": [
+        45,
+        243,
+        28,
+        22,
+        132,
+        70,
+        175,
+        226
+      ]
+    },
+    {
+      "name": "RoundFailed",
+      "discriminator": [
+        162,
+        209,
+        228,
+        133,
+        70,
+        176,
+        236,
+        52
+      ]
+    },
+    {
+      "name": "RoundFinalized",
+      "discriminator": [
+        43,
+        187,
+        17,
+        193,
+        36,
+        241,
+        48,
+        82
+      ]
+    },
+    {
+      "name": "RoundOpened",
+      "discriminator": [
+        99,
+        173,
+        228,
+        72,
+        142,
+        57,
+        109,
+        178
+      ]
+    },
+    {
+      "name": "RoundSwept",
+      "discriminator": [
+        38,
+        114,
+        60,
+        111,
+        5,
+        101,
+        157,
+        99
+      ]
+    },
+    {
+      "name": "TreasuryChanged",
+      "discriminator": [
+        252,
+        2,
+        55,
+        56,
+        106,
+        205,
+        227,
+        47
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6001,
+      "name": "Paused",
+      "msg": "Protocol is paused"
+    },
+    {
+      "code": 6002,
+      "name": "Unauthorized",
+      "msg": "Signer is not the protocol admin"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidParams",
+      "msg": "Invalid protocol parameters"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidBarrier",
+      "msg": "Invalid barrier index"
+    },
+    {
+      "code": 6005,
+      "name": "ZeroParticles",
+      "msg": "Particle count must be greater than zero"
+    },
+    {
+      "code": 6006,
+      "name": "PositionLimitExceeded",
+      "msg": "Position particle limit exceeded for this round"
+    },
+    {
+      "code": 6007,
+      "name": "RoundNotOpen",
+      "msg": "Round is not open for deposits"
+    },
+    {
+      "code": 6008,
+      "name": "RoundNotStarted",
+      "msg": "Round has not started yet"
+    },
+    {
+      "code": 6009,
+      "name": "RoundExpired",
+      "msg": "Round deposit window has ended"
+    },
+    {
+      "code": 6010,
+      "name": "RoundStillOpen",
+      "msg": "Round deposit window is still running"
+    },
+    {
+      "code": 6011,
+      "name": "RoundScheduleConflict",
+      "msg": "The next round cannot be scheduled yet"
+    },
+    {
+      "code": 6012,
+      "name": "NotAwaitingRandomness",
+      "msg": "Round is not awaiting randomness"
+    },
+    {
+      "code": 6013,
+      "name": "RoundNotClosed",
+      "msg": "Round is not closed"
+    },
+    {
+      "code": 6014,
+      "name": "SlotHashesUnavailable",
+      "msg": "Slot hashes sysvar is unavailable or malformed"
+    },
+    {
+      "code": 6015,
+      "name": "RandomnessNotFulfilled",
+      "msg": "Randomness has not been fulfilled yet"
+    },
+    {
+      "code": 6016,
+      "name": "RandomnessAccountMismatch",
+      "msg": "Randomness account does not match the round request"
+    },
+    {
+      "code": 6017,
+      "name": "NotResolving",
+      "msg": "Round is not resolving"
+    },
+    {
+      "code": 6018,
+      "name": "PositionAlreadySettled",
+      "msg": "Position has already been settled"
+    },
+    {
+      "code": 6019,
+      "name": "PositionsPending",
+      "msg": "Not every position has been settled"
+    },
+    {
+      "code": 6020,
+      "name": "RoundNotSettled",
+      "msg": "Round is not settled"
+    },
+    {
+      "code": 6021,
+      "name": "AlreadyClaimed",
+      "msg": "Position has already been claimed"
+    },
+    {
+      "code": 6022,
+      "name": "PositionNotSettled",
+      "msg": "Position is not settled"
+    },
+    {
+      "code": 6023,
+      "name": "RecoveryNotAvailable",
+      "msg": "Round cannot be recovered yet"
+    },
+    {
+      "code": 6024,
+      "name": "ClaimsOutstanding",
+      "msg": "Round has outstanding claims"
+    },
+    {
+      "code": 6025,
+      "name": "AlreadySwept",
+      "msg": "Round has already been swept"
+    },
+    {
+      "code": 6026,
+      "name": "InsufficientEscrow",
+      "msg": "Escrow balance is insufficient"
+    },
+    {
+      "code": 6027,
+      "name": "InsufficientReserve",
+      "msg": "Reward reserve is insufficient"
+    },
+    {
+      "code": 6028,
+      "name": "TreasuryMismatch",
+      "msg": "Treasury account does not match protocol configuration"
+    },
+    {
+      "code": 6029,
+      "name": "NotPendingAdmin",
+      "msg": "No pending admin, or signer is not the pending admin"
+    },
+    {
+      "code": 6030,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6031,
+      "name": "RoundMismatch",
+      "msg": "Account does not belong to this round"
+    },
+    {
+      "code": 6032,
+      "name": "RandomnessAvailable",
+      "msg": "Randomness is available; reveal it instead of recovering"
+    }
+  ],
+  "types": [
+    {
+      "name": "AdminAccepted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AdminProposed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pending_admin",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BarrierParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "transmission_bps",
+            "type": "u16"
+          },
+          {
+            "name": "reward_weight",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeesWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ParamsUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "ProtocolParams"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ParticlesDeployed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "barrier",
+            "type": "u8"
+          },
+          {
+            "name": "count",
+            "type": "u16"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "position_particles",
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "round_total_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauseChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "particles",
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "settled",
+            "type": "bool"
+          },
+          {
+            "name": "successes",
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "success_weight",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "lamports_paid",
+            "type": "u64"
+          },
+          {
+            "name": "tokens_paid",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "particles",
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "successes",
+            "type": {
+              "array": [
+                "u16",
+                3
+              ]
+            }
+          },
+          {
+            "name": "success_weight",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Protocol",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_admin",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "tunnel_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "reward_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "ProtocolParams"
+              }
+            }
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "next_round_id",
+            "type": "u64"
+          },
+          {
+            "name": "last_round_open_ts",
+            "type": "i64"
+          },
+          {
+            "name": "last_round_close_ts",
+            "type": "i64"
+          },
+          {
+            "name": "reserve_available",
+            "type": "u64"
+          },
+          {
+            "name": "reserve_funded_total",
+            "type": "u64"
+          },
+          {
+            "name": "total_lamports_committed",
+            "type": "u64"
+          },
+          {
+            "name": "total_particles",
+            "type": "u64"
+          },
+          {
+            "name": "total_successes",
+            "type": "u64"
+          },
+          {
+            "name": "total_tokens_allocated",
+            "type": "u64"
+          },
+          {
+            "name": "total_fees_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "rounds_settled",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reward_vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "tunnel_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "reward_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "ProtocolParams"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "barriers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "BarrierParams"
+                  }
+                },
+                3
+              ]
+            }
+          },
+          {
+            "name": "particle_cost_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "round_duration_secs",
+            "type": "u32"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_particles_per_position",
+            "type": "u16"
+          },
+          {
+            "name": "randomness_timeout_secs",
+            "type": "u32"
+          },
+          {
+            "name": "initial_emission_per_round",
+            "type": "u64"
+          },
+          {
+            "name": "emission_decay_bps",
+            "type": "u16"
+          },
+          {
+            "name": "emission_epoch_rounds",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RandomnessRequested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "vrf_seed",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "requested_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RandomnessRevealed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "randomness",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ReserveFunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "funder",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "reserve_available",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RewardClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "tokens",
+            "type": "u64"
+          },
+          {
+            "name": "outcome",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Round",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "RoundStatus"
+              }
+            }
+          },
+          {
+            "name": "outcome",
+            "type": {
+              "defined": {
+                "name": "RoundOutcome"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "open_ts",
+            "type": "i64"
+          },
+          {
+            "name": "close_ts",
+            "type": "i64"
+          },
+          {
+            "name": "closed_ts",
+            "type": "i64"
+          },
+          {
+            "name": "barriers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "BarrierParams"
+                  }
+                },
+                3
+              ]
+            }
+          },
+          {
+            "name": "particle_cost_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_particles_per_position",
+            "type": "u16"
+          },
+          {
+            "name": "randomness_timeout_secs",
+            "type": "u32"
+          },
+          {
+            "name": "emission_budget",
+            "type": "u64"
+          },
+          {
+            "name": "particles",
+            "type": {
+              "array": [
+                "u64",
+                3
+              ]
+            }
+          },
+          {
+            "name": "total_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "participants",
+            "type": "u32"
+          },
+          {
+            "name": "vrf_seed",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "randomness_requested_ts",
+            "type": "i64"
+          },
+          {
+            "name": "randomness",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "positions_settled",
+            "type": "u32"
+          },
+          {
+            "name": "successes",
+            "type": {
+              "array": [
+                "u64",
+                3
+              ]
+            }
+          },
+          {
+            "name": "total_success_weight",
+            "type": "u64"
+          },
+          {
+            "name": "fee_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "distributable_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "settled_ts",
+            "type": "i64"
+          },
+          {
+            "name": "claims",
+            "type": "u32"
+          },
+          {
+            "name": "lamports_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "tokens_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "swept",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "vrf_seed",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "participants",
+            "type": "u32"
+          },
+          {
+            "name": "total_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "particles",
+            "type": {
+              "array": [
+                "u64",
+                3
+              ]
+            }
+          },
+          {
+            "name": "closed_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundFailed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "reason",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "outcome",
+            "type": "u8"
+          },
+          {
+            "name": "total_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "fee_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "distributable_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "successes",
+            "type": {
+              "array": [
+                "u64",
+                3
+              ]
+            }
+          },
+          {
+            "name": "total_success_weight",
+            "type": "u64"
+          },
+          {
+            "name": "emission_budget",
+            "type": "u64"
+          },
+          {
+            "name": "tokens_allocated",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "open_ts",
+            "type": "i64"
+          },
+          {
+            "name": "close_ts",
+            "type": "i64"
+          },
+          {
+            "name": "barriers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "BarrierParams"
+                  }
+                },
+                3
+              ]
+            }
+          },
+          {
+            "name": "particle_cost_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "emission_budget",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundOutcome",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "Rewards"
+          },
+          {
+            "name": "NoSuccessRefund"
+          },
+          {
+            "name": "FullRefund"
+          },
+          {
+            "name": "Empty"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Closed"
+          },
+          {
+            "name": "AwaitingRandomness"
+          },
+          {
+            "name": "Resolving"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Failed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundSwept",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "lamports_to_treasury",
+            "type": "u64"
+          },
+          {
+            "name": "tokens_returned_to_reserve",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundVault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryVault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

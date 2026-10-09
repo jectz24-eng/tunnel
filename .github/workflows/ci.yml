@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx tsc -p tsconfig.tests.json
+      - run: npm run build -w app
+        env: { NEXT_PUBLIC_CLUSTER: devnet }
+      - name: e2e (Playwright)
+        run: |
+          npx playwright install --with-deps chromium
+          PW_CHANNEL=chromium npm run test:e2e
+        env: { NEXT_PUBLIC_CLUSTER: devnet }
+
+  program:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install Solana + Anchor
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.0/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          cargo install --git https://github.com/coral-xyz/anchor avm --tag v0.32.1 --locked
+          avm install 0.32.1 && avm use 0.32.1
+      - run: npm ci
+      - run: cargo test -p tunnel
+      - run: solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json
+      # The program keypair fixes the program id declared in lib.rs; store it as a repository secret.
+      - run: mkdir -p target/deploy && printf '%s' "$TUNNEL_PROGRAM_KEYPAIR" > target/deploy/tunnel-keypair.json
+        env: { TUNNEL_PROGRAM_KEYPAIR: "${{ secrets.TUNNEL_PROGRAM_KEYPAIR }}" }
+      - run: anchor build && npm run idl:sync
+      - run: anchor test

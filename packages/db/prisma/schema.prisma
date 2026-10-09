@@ -1,0 +1,190 @@
+// TUNNEL indexer database.
+//
+// Everything here is a *derived* view of onchain state. The chain is the only
+// authority over funds and rewards; the keeper reconciles these tables against
+// program accounts, and claimable balances are always re-read from chain.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Every decoded program event, exactly once (idempotent on signature + index).
+model IndexedEvent {
+  id          BigInt   @id @default(autoincrement())
+  signature   String
+  eventIndex  Int
+  slot        BigInt
+  blockTime   DateTime?
+  name        String
+  roundId     BigInt?
+  owner       String?
+  data        Json
+  /// "confirmed" when first seen, upgraded to "finalized" by the reconciler.
+  commitment  String   @default("confirmed")
+  createdAt   DateTime @default(now())
+
+  @@unique([signature, eventIndex])
+  @@index([name, id])
+  @@index([roundId])
+  @@index([owner])
+}
+
+model Round {
+  id                    BigInt    @id
+  status                String
+  outcome               String
+  openTs                DateTime
+  closeTs               DateTime
+  barrierBps            Int[]
+  barrierWeights        Int[]
+  particleCostLamports  BigInt
+  protocolFeeBps        Int
+  emissionBudget        BigInt
+  particles             BigInt[]
+  totalLamports         BigInt
+  participants          Int
+  vrfSeed               String?
+  randomness            String?
+  successes             BigInt[]
+  totalSuccessWeight    BigInt
+  feeLamports           BigInt
+  distributableLamports BigInt
+  tokensAllocated       BigInt    @default(0)
+  claims                Int
+  settledAt             DateTime?
+  swept                 Boolean   @default(false)
+  reconciledSlot        BigInt    @default(0)
+  updatedAt             DateTime  @updatedAt
+
+  positions Position[]
+
+  @@index([status])
+}
+
+model Position {
+  roundId        BigInt
+  owner          String
+  address        String   @unique
+  particles      Int[]
+  lamports       BigInt
+  settled        Boolean
+  successes      Int[]
+  successWeight  BigInt
+  claimed        Boolean
+  lamportsPaid   BigInt
+  tokensPaid     BigInt
+  /// Expected payout computed with the SDK mirror of the program math (null until settled).
+  expectedLamports BigInt?
+  expectedTokens   BigInt?
+  firstSeenAt    DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  round Round @relation(fields: [roundId], references: [id])
+
+  @@id([roundId, owner])
+  @@index([owner])
+}
+
+/// One row per `ParticlesDeployed` event — the live activity feed.
+model Deposit {
+  signature  String
+  eventIndex Int
+  roundId    BigInt
+  owner      String
+  barrier    Int
+  count      Int
+  lamports   BigInt
+  blockTime  DateTime?
+  slot       BigInt
+
+  @@id([signature, eventIndex])
+  @@index([roundId])
+  @@index([owner])
+  @@index([slot])
+}
+
+/// One row per `RewardClaimed` event.
+model Claim {
+  signature  String
+  eventIndex Int
+  roundId    BigInt
+  owner      String
+  lamports   BigInt
+  tokens     BigInt
+  outcome    Int
+  blockTime  DateTime?
+  slot       BigInt
+
+  @@id([signature, eventIndex])
+  @@index([owner])
+  @@index([roundId])
+}
+
+/// Per-wallet aggregates, recomputed from Position rows (never incremented blindly).
+model WalletStats {
+  owner             String   @id
+  roundsPlayed      Int
+  particles         BigInt
+  successes         BigInt
+  failures          BigInt
+  lamportsCommitted BigInt
+  lamportsReceived  BigInt
+  tokensMined       BigInt
+  claimableRounds   Int
+  updatedAt         DateTime @updatedAt
+
+  @@index([tokensMined])
+  @@index([successes])
+  @@index([lamportsReceived])
+}
+
+/// Singleton mirror of the onchain Protocol account.
+model ProtocolState {
+  id                     Int      @id @default(1)
+  address                String
+  admin                  String
+  treasury               String
+  tunnelMint             String
+  rewardVault            String
+  paused                 Boolean
+  params                 Json
+  nextRoundId            BigInt
+  reserveAvailable       BigInt
+  reserveFundedTotal     BigInt
+  totalLamportsCommitted BigInt
+  totalParticles         BigInt
+  totalSuccesses         BigInt
+  totalTokensAllocated   BigInt
+  totalFeesLamports      BigInt
+  roundsSettled          BigInt
+  slot                   BigInt
+  updatedAt              DateTime @updatedAt
+}
+
+model IndexerCursor {
+  id            String   @id
+  lastSignature String?
+  lastSlot      BigInt   @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+/// Audit log of every crank transaction the keeper attempted.
+model KeeperAction {
+  id        BigInt   @id @default(autoincrement())
+  kind      String
+  roundId   BigInt?
+  target    String?
+  signature String?
+  status    String
+  error     String?
+  attempts  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([roundId])
+}

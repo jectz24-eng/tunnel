@@ -1,0 +1,26 @@
+node_modules/
+.next/
+out/
+dist/
+target/
+!target/idl/
+!target/types/
+test-ledger/
+.anchor/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.DS_Store
+
+# secrets — never commit keys or env files
+.env
+.env.*
+!.env.example
+!**/.env.example
+keys/
+*.keypair.json
+id.json
+.pgdata/
+packages/db/src/generated/
+.scratch/

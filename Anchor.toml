@@ -1,0 +1,39 @@
+[toolchain]
+anchor_version = "0.32.1"
+solana_version = "2.3.0"
+package_manager = "npm"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+tunnel = "GyywTr1c6yTJPSxDiADUfawcpuQBQ6JPwMKaoC6WrhF9"
+
+[programs.devnet]
+tunnel = "GyywTr1c6yTJPSxDiADUfawcpuQBQ6JPwMKaoC6WrhF9"
+
+# Mainnet is intentionally commented out. Do not enable without explicit owner
+# authorization AND an independent security audit. See docs/DEPLOYMENT.md.
+# [programs.mainnet]
+# tunnel = "<mainnet program id>"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "npx mocha --import=tsx -t 1000000 tests/**/*.ts"
+
+[test]
+upgradeable = true
+startup_wait = 20000
+
+# Local validator clones the real ORAO VRF program from devnet. The test suite
+# then initialises a *local* ORAO network state with its own fulfillment key so
+# randomness fulfillment is deterministic and testable offline.
+[test.validator]
+url = "https://api.devnet.solana.com"
+
+[[test.validator.clone]]
+address = "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
