@@ -2,7 +2,7 @@
 //! `packages/sdk/src/math.ts`; any change here must change there too.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::hash::hashv;
+use solana_sha256_hasher::hashv;
 
 use crate::constants::*;
 use crate::errors::TunnelError;

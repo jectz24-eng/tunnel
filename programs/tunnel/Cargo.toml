@@ -23,3 +23,4 @@ anchor-spl = { version = "0.32.1", default-features = false, features = ["token"
 orao-solana-vrf = { version = "0.7.0", default-features = false, features = ["cpi"] }
 # Pinned for compatibility with the Solana platform-tools rustc (same pin as ORAO's examples).
 blake3 = "=1.8.2"
+solana-sha256-hasher = "2.3.0"
