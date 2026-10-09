@@ -1,0 +1,3 @@
+[resolver]
+# Solana platform-tools ship an older rustc; prefer dependency versions it can build.
+incompatible-rust-versions = "fallback"

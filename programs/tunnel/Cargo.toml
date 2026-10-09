@@ -3,6 +3,7 @@ name = "tunnel"
 version = "0.1.0"
 description = "TUNNEL — quantum-inspired mining protocol on Solana"
 edition = "2021"
+rust-version = "1.84"
 license = "UNLICENSED"
 
 [lib]
