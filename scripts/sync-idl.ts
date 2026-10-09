@@ -32,7 +32,7 @@ const shape = (idl: any) => ({
   events: idl.events.map((x: any) => [x.name, x.discriminator]).sort(),
   errors: idl.errors.map((e: any) => [e.code, e.name]),
   types: idl.types
-    .map((t: any) => ({ name: t.name, type: { kind: t.type.kind, fields: t.type.fields, variants: t.type.variants?.map((v: any) => v.name) } }))
+    .map((t: any) => ({ name: t.name, type: { kind: t.type.kind, fields: t.type.fields?.map((f: any) => ({ name: f.name, type: f.type })), variants: t.type.variants?.map((v: any) => v.name) } }))
     .sort((x: any, y: any) => x.name.localeCompare(y.name)),
 });
 
