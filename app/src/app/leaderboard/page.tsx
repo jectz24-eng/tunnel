@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { SectionHeading } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { LeaderboardView } from "./LeaderboardView";
 
-export const metadata: Metadata = { title: "Leaderboard" };
+export const metadata: Metadata = { title: "Leaderboard", description: "TUNNEL leaderboards from verified onchain data: tunnels, rewards, particles, best cycle, streaks and activity." };
 
 export default function LeaderboardPage() {
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-14 sm:px-6">
-      <SectionHeading eyebrow="Leaderboard" title="Top miners">
-        Every figure is derived from indexed onchain positions. Sort by any column and filter by period or barrier.
-      </SectionHeading>
+    <>
+      <PageHeader eyebrow="Leaderboard · verified data only" title={<>Who made it through.</>}>
+        Rankings are built from settled, reconciled onchain positions. No self-reported numbers.
+      </PageHeader>
       <LeaderboardView />
-    </div>
+    </>
   );
 }

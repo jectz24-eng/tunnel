@@ -28,3 +28,4 @@ packages/db/src/generated/
 # local screenshot tooling
 *.tmp.mjs
 app/shots/
+.pgdata-v1/

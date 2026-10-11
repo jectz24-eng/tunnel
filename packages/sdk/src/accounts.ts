@@ -3,7 +3,7 @@ import { PublicKey, type Connection } from "@solana/web3.js";
 import idlJson from "./idl/tunnel.json";
 import type { BarrierConfig, EnergyLevel, OddsTable, ProtocolParams } from "./constants";
 import type { Outcome } from "./math";
-import { cyclePda, positionPda, protocolPda } from "./pda";
+import { cyclePda, positionPda, protocolPda, u64le } from "./pda";
 
 export const IDL = idlJson as unknown as Idl;
 export const coder = new BorshCoder(IDL);
@@ -243,8 +243,7 @@ export async function fetchPosition(connection: Connection, cycleId: bigint, own
 
 /** Every open position of a cycle (for settlement cranks). Filters by discriminator + cycle id. */
 export async function fetchCyclePositions(connection: Connection, cycleId: bigint, programId: PublicKey) {
-  const cycleIdLe = Buffer.alloc(8);
-  cycleIdLe.writeBigUInt64LE(cycleId);
+  const cycleIdLe = u64le(cycleId);
   const accounts = await connection.getProgramAccounts(programId, {
     filters: [
       { memcmp: { offset: 0, bytes: encodeBase58(ACCOUNT_DISCRIMINATORS.Position) } },

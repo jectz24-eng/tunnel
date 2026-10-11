@@ -266,6 +266,7 @@ export async function fetchOraoRandomness(
   const info = await connection.getAccountInfo(oraoRandomnessPda(seed));
   if (!info || !info.owner.equals(ORAO_VRF_PROGRAM_ID)) return { exists: false, fulfilled: false, randomness: null };
   const d = info.data;
-  const fulfilled = d.length >= 8 + 1 + 64 + 64 && d[8] === 1 && Buffer.from(d.subarray(8 + 1 + 32, 8 + 1 + 64)).equals(Buffer.from(seed));
+  const storedSeed = d.subarray(8 + 1 + 32, 8 + 1 + 64);
+  const fulfilled = d.length >= 8 + 1 + 64 + 64 && d[8] === 1 && storedSeed.every((x, i) => x === seed[i]);
   return { exists: true, fulfilled, randomness: fulfilled ? Uint8Array.from(d.subarray(8 + 1 + 64, 8 + 1 + 128)) : null };
 }

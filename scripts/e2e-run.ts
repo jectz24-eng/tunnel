@@ -23,6 +23,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   BARRIER_META,
+  IDL,
   LEVEL_LABELS,
   TunnelInstructions,
   computePayout,
@@ -50,7 +51,13 @@ function record(step: string, sig: string, cluster: string) {
   console.log(`${step}\n  ${explorer(sig, cluster)}`);
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const logsOf = (e: unknown) => String(e) + ((e as { logs?: string[] }).logs ?? []).join("\n");
+/** Error text plus logs, with `Custom: <code>` mapped to its IDL error name (confirm-time failures carry only the code). */
+const logsOf = (e: unknown) => {
+  const text = String(e) + JSON.stringify((e as { transactionMessage?: string }).transactionMessage ?? "") + ((e as { logs?: string[] }).logs ?? []).join("\n");
+  const code = /"Custom":(\d+)/.exec(text)?.[1];
+  const name = code ? IDL.errors?.find((x) => x.code === Number(code))?.name : undefined;
+  return name ? `${text} ${name}` : text;
+};
 
 async function main() {
   const conn = connection();
@@ -178,7 +185,7 @@ async function main() {
     const pos = (await fetchPosition(conn, cycleId, u.publicKey, tunnel.programId))!;
     const expected = computePayout({ outcome: c.outcome, totalNominal: c.totalNominal, emissionBudget: c.emissionBudget, positionNominal: pos.nominalReward });
     const ata: PublicKey = getAssociatedTokenAddressSync(protocol.tunnelMint, u.publicKey);
-    const solBefore = await conn.getBalance(u.publicKey);
+    const deposit = await conn.getBalance(positionPda(cycleId, u.publicKey, tunnel.programId));
     const sig = await sendIxs(conn, u, tunnel.claim({ owner: u.publicKey, cycleId, tunnelMint: protocol.tunnelMint, expectsTokens: expected > 0n }));
     record(`claim (user ${"AB"[i]})`, sig, cluster);
     const tx = await conn.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
@@ -187,7 +194,6 @@ async function main() {
     if (paid !== expected) throw new Error(`claim mismatch for user ${"AB"[i]}`);
     if (expected > 0n && (await getAccount(conn, ata)).amount !== expected) throw new Error("token balance mismatch");
     if (await conn.getAccountInfo(positionPda(cycleId, u.publicKey, tunnel.programId))) throw new Error("position not closed after claim");
-    const rentBack = (await conn.getBalance(u.publicKey)) - solBefore + (tx!.meta!.fee ?? 0);
     try {
       await sendIxs(conn, u, tunnel.claim({ owner: u.publicKey, cycleId, tunnelMint: protocol.tunnelMint, expectsTokens: false }));
       throw new Error("duplicate claim succeeded — this must never happen");
@@ -198,7 +204,7 @@ async function main() {
     const total = pos.particles.flat().reduce((a, b) => a + b, 0);
     results.push(
       `- user ${"AB"[i]}: ${total} particles, ${pos.energyUsed}/100 energy, **${tunneled} tunneled**, paid **${formatTunnel(paid)} $TUNNEL** (matches SDK), ` +
-        `position rent returned (${(rentBack / LAMPORTS_PER_SOL).toFixed(6)} SOL incl. token-account creation if any), duplicate claim rejected`,
+        `position deposit of ${(deposit / LAMPORTS_PER_SOL).toFixed(6)} SOL returned, duplicate claim rejected`,
     );
   }
 
