@@ -2588,6 +2588,21 @@
             "type": "u16"
           },
           {
+            "name": "height_milli",
+            "docs": [
+              "Physical inputs of this attempt (from the cycle snapshot): V₀×1000, a×1000, E/V₀ in bps."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "width_milli",
+            "type": "u32"
+          },
+          {
+            "name": "energy_bps",
+            "type": "u16"
+          },
+          {
             "name": "transmission_ppb",
             "type": "u32"
           },
