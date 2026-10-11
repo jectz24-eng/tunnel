@@ -1,19 +1,21 @@
 /**
- * Exact TypeScript mirror of programs/tunnel/src/math.rs and the payout rules
- * in claim.rs. All settlement values are bigint; nothing here uses floats.
- * Anyone can use these functions to recompute a round's outcomes from the
- * onchain randomness and verify what the program paid.
+ * Exact TypeScript mirror of programs/tunnel/src/math.rs. Every settlement
+ * value is bigint; the only floating point is the physics model that derives
+ * the odds table (mirrored separately in physics.ts). Anyone can use these
+ * functions to recompute a cycle's outcomes from the onchain randomness and
+ * verify what the program paid.
  */
 import { sha256 } from "@noble/hashes/sha2.js";
-import { BPS, PARTICLE_DOMAIN, type ProtocolParams } from "./constants";
+import { BPS, PARTICLE_DOMAIN, type OddsTable, type ProtocolParams } from "./constants";
 import { u64le } from "./pda";
+import { PPB, transmissionPpb } from "./physics";
 
 const FIXED_ONE = 10n ** 18n;
 const U64_MAX = (1n << 64n) - 1n;
 const domain = new TextEncoder().encode(PARTICLE_DOMAIN);
 
-export function successThreshold(transmissionBps: number): bigint {
-  return ((BigInt(transmissionBps) << 64n) / BPS) & U64_MAX;
+export function successThreshold(transmissionPpb: number): bigint {
+  return ((BigInt(transmissionPpb) << 64n) / BigInt(PPB)) & U64_MAX;
 }
 
 function u32le(n: number): Uint8Array {
@@ -22,12 +24,13 @@ function u32le(n: number): Uint8Array {
   return b;
 }
 
-/** u64_le(sha256(DOMAIN ‖ randomness ‖ round_id_le ‖ owner ‖ barrier ‖ index_le)[0..8]) */
+/** u64_le(sha256(DOMAIN ‖ randomness ‖ cycle_id_le ‖ owner ‖ barrier ‖ level ‖ index_le)[0..8]) */
 export function particleDraw(
   randomness: Uint8Array,
-  roundId: bigint,
+  cycleId: bigint,
   owner: Uint8Array,
   barrier: number,
+  level: number,
   index: number,
 ): bigint {
   if (randomness.length !== 64) throw new Error("randomness must be 64 bytes");
@@ -36,9 +39,9 @@ export function particleDraw(
     .create()
     .update(domain)
     .update(randomness)
-    .update(u64le(roundId))
+    .update(u64le(cycleId))
     .update(owner)
-    .update(Uint8Array.of(barrier))
+    .update(Uint8Array.of(barrier, level))
     .update(u32le(index))
     .digest();
   return new DataView(h.buffer, h.byteOffset, 8).getBigUint64(0, true);
@@ -46,39 +49,30 @@ export function particleDraw(
 
 export interface ParticleOutcome {
   barrier: number;
+  level: number;
   index: number;
   draw: bigint;
   success: boolean;
 }
 
-/** Every particle outcome for one barrier of one position, in index order. */
+/** Outcomes of particles `firstIndex .. firstIndex+count` in one [barrier][level] cell. */
 export function particleOutcomes(
   randomness: Uint8Array,
-  roundId: bigint,
+  cycleId: bigint,
   owner: Uint8Array,
   barrier: number,
+  level: number,
   count: number,
-  transmissionBps: number,
+  transmissionPpb: number,
+  firstIndex = 0,
 ): ParticleOutcome[] {
-  const t = successThreshold(transmissionBps);
+  const t = successThreshold(transmissionPpb);
   const out: ParticleOutcome[] = [];
-  for (let i = 0; i < count; i++) {
-    const draw = particleDraw(randomness, roundId, owner, barrier, i);
-    out.push({ barrier, index: i, draw, success: draw < t });
+  for (let i = firstIndex; i < firstIndex + count; i++) {
+    const draw = particleDraw(randomness, cycleId, owner, barrier, level, i);
+    out.push({ barrier, level, index: i, draw, success: draw < t });
   }
   return out;
-}
-
-export function countSuccesses(
-  randomness: Uint8Array,
-  roundId: bigint,
-  owner: Uint8Array,
-  barrier: number,
-  count: number,
-  transmissionBps: number,
-): number {
-  return particleOutcomes(randomness, roundId, owner, barrier, count, transmissionBps).filter((o) => o.success)
-    .length;
 }
 
 export function mulDiv(amount: bigint, num: bigint, den: bigint): bigint {
@@ -86,6 +80,30 @@ export function mulDiv(amount: bigint, num: bigint, den: bigint): bigint {
   const v = (amount * num) / den;
   if (v > U64_MAX) throw new Error("u64 overflow");
   return v;
+}
+
+/** `floor(rewardPerEnergy · cost · premiumBps · 10⁹ / (10⁴ · ppb))` */
+export function nominalReward(rewardPerEnergy: bigint, cost: number, premiumBps: number, ppb: number): bigint {
+  const v = (rewardPerEnergy * BigInt(cost) * BigInt(premiumBps) * BigInt(PPB)) / (BPS * BigInt(ppb));
+  if (v > U64_MAX) throw new Error("u64 overflow");
+  return v;
+}
+
+/** Mirrors `derive_odds`: physics → probabilities → calibrated rewards. Throws on out-of-bounds physics. */
+export function deriveOdds(params: Pick<ProtocolParams, "barriers" | "levels" | "rewardPerEnergy">): OddsTable {
+  const transmission: number[][] = [];
+  const reward: bigint[][] = [];
+  params.barriers.forEach((b, bi) => {
+    transmission.push([]);
+    reward.push([]);
+    params.levels.forEach((l) => {
+      const ppb = transmissionPpb(b.heightMilli, b.widthMilli, l.energyBps);
+      if (ppb == null) throw new Error(`barrier ${bi} at ${l.energyBps} bps is outside the probability bounds`);
+      transmission[bi].push(ppb);
+      reward[bi].push(nominalReward(params.rewardPerEnergy, l.cost, b.rewardPremiumBps, ppb));
+    });
+  });
+  return { transmissionPpb: transmission, reward };
 }
 
 function fixedPow(base: bigint, exp: bigint): bigint {
@@ -101,59 +119,42 @@ function fixedPow(base: bigint, exp: bigint): bigint {
   return result;
 }
 
-export function scheduledEmission(params: Pick<ProtocolParams, "initialEmissionPerRound" | "emissionDecayBps" | "emissionEpochRounds">, roundId: bigint): bigint {
-  const epoch = roundId / BigInt(Math.max(1, params.emissionEpochRounds));
+type EmissionParams = Pick<ProtocolParams, "initialEmissionPerCycle" | "emissionDecayBps" | "emissionEpochCycles">;
+
+export function scheduledEmission(params: EmissionParams, cycleId: bigint): bigint {
+  const epoch = cycleId / BigInt(Math.max(1, params.emissionEpochCycles));
   const decay = BigInt(params.emissionDecayBps) * (FIXED_ONE / BPS);
-  return (params.initialEmissionPerRound * fixedPow(decay, epoch)) / FIXED_ONE;
+  return (params.initialEmissionPerCycle * fixedPow(decay, epoch)) / FIXED_ONE;
 }
 
-export function splitFee(totalLamports: bigint, feeBps: number): { fee: bigint; distributable: bigint } {
-  const fee = mulDiv(totalLamports, BigInt(feeBps), BPS);
-  return { fee, distributable: totalLamports - fee };
-}
+export type Outcome = "pending" | "rewards" | "noTunnels" | "void" | "empty";
 
-export type Outcome = "pending" | "rewards" | "noSuccessRefund" | "fullRefund" | "empty";
-
-export interface PayoutInput {
-  outcome: Outcome;
-  distributableLamports: bigint;
-  totalLamports: bigint;
-  totalSuccessWeight: bigint;
-  emissionBudget: bigint;
-  positionLamports: bigint;
-  positionSuccessWeight: bigint;
-}
-
-/** Mirrors `compute_payout` in claim.rs. Returns null when nothing is claimable yet. */
-export function computePayout(p: PayoutInput): { lamports: bigint; tokens: bigint } | null {
-  switch (p.outcome) {
-    case "rewards":
-      return {
-        lamports: mulDiv(p.distributableLamports, p.positionSuccessWeight, p.totalSuccessWeight),
-        tokens: mulDiv(p.emissionBudget, p.positionSuccessWeight, p.totalSuccessWeight),
-      };
-    case "noSuccessRefund":
-      return { lamports: mulDiv(p.distributableLamports, p.positionLamports, p.totalLamports), tokens: 0n };
-    case "fullRefund":
-      return { lamports: p.positionLamports, tokens: 0n };
-    default:
-      return null;
-  }
+/** Mirrors `compute_payout`: nominal in full while the cycle is within budget, else pro rata. */
+export function computePayout(p: { outcome: Outcome; totalNominal: bigint; emissionBudget: bigint; positionNominal: bigint }): bigint {
+  if (p.outcome !== "rewards" || p.positionNominal === 0n) return 0n;
+  if (p.totalNominal <= p.emissionBudget) return p.positionNominal;
+  return mulDiv(p.emissionBudget, p.positionNominal, p.totalNominal);
 }
 
 /** Projected cumulative emission for charts (pre-cap). Sampled per epoch. */
-export function emissionCurve(
-  params: Pick<ProtocolParams, "initialEmissionPerRound" | "emissionDecayBps" | "emissionEpochRounds">,
-  epochs: number,
-  stride = 1,
-): { epoch: number; perRound: bigint; cumulative: bigint }[] {
-  const out: { epoch: number; perRound: bigint; cumulative: bigint }[] = [];
+export function emissionCurve(params: EmissionParams, epochs: number, stride = 1) {
+  const out: { epoch: number; perCycle: bigint; cumulative: bigint }[] = [];
   let cumulative = 0n;
-  const rounds = BigInt(params.emissionEpochRounds);
+  const cycles = BigInt(params.emissionEpochCycles);
   for (let e = 0; e < epochs; e++) {
-    const perRound = scheduledEmission(params, BigInt(e) * rounds);
-    cumulative += perRound * rounds;
-    if (e % stride === 0) out.push({ epoch: e, perRound, cumulative });
+    const perCycle = scheduledEmission(params, BigInt(e) * cycles);
+    cumulative += perCycle * cycles;
+    if (e % stride === 0) out.push({ epoch: e, perCycle, cumulative });
   }
   return out;
+}
+
+/** Expected nominal reward of `count` particles in a cell (probability × reward). */
+export function expectedReward(odds: OddsTable, barrier: number, level: number, count: number): bigint {
+  return (odds.reward[barrier][level] * BigInt(odds.transmissionPpb[barrier][level]) * BigInt(count)) / BigInt(PPB);
+}
+
+/** Probability that at least one of `count` independent particles tunnels. */
+export function atLeastOneProbability(ppb: number, count: number): number {
+  return 1 - Math.pow(1 - ppb / PPB, count);
 }

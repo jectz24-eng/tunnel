@@ -1,152 +1,128 @@
+import { Keypair, PublicKey } from "@solana/web3.js";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PARAMS, TUNNEL_MINING_RESERVE } from "../src/constants";
+import { DEFAULT_PARAMS } from "../src/constants";
 import {
   computePayout,
-  countSuccesses,
+  deriveOdds,
   emissionCurve,
   mulDiv,
+  nominalReward,
   particleDraw,
+  particleOutcomes,
   scheduledEmission,
-  splitFee,
   successThreshold,
 } from "../src/math";
 
-const U64_MAX = (1n << 64n) - 1n;
+describe("particle draws", () => {
+  it("matches the Rust known vector", () => {
+    // programs/tunnel/src/math.rs::known_vector (also checked with Python hashlib).
+    const d = particleDraw(new Uint8Array(64).fill(1), 7n, new Uint8Array(32).fill(2), 1, 2, 3);
+    expect(d).toBe(5_097_536_720_253_246_649n);
+  });
 
-describe("successThreshold", () => {
-  it("matches floor(bps · 2^64 / 10^4)", () => {
+  it("thresholds are exact at the boundaries", () => {
     expect(successThreshold(0)).toBe(0n);
-    expect(successThreshold(5000)).toBe(1n << 63n);
-    expect(successThreshold(6500)).toBe(((6500n << 64n) / 10000n));
-  });
-  it("is monotonic", () => {
-    fc.assert(fc.property(fc.integer({ min: 0, max: 9998 }), (b) => successThreshold(b) < successThreshold(b + 1)));
-  });
-});
-
-describe("particleDraw", () => {
-  const r = new Uint8Array(64).fill(1);
-  const owner = new Uint8Array(32).fill(2);
-
-  it("matches the Rust known vector bit-for-bit", () => {
-    expect(particleDraw(r, 7n, owner, 1, 3)).toBe(2_211_064_809_742_104_174n);
+    expect(successThreshold(500_000_000)).toBe(1n << 63n);
+    expect(successThreshold(999_999_999) < (1n << 64n) - 1n).toBe(true);
   });
 
-  it("is deterministic and input-sensitive", () => {
-    const d = particleDraw(r, 7n, owner, 1, 3);
-    expect(particleDraw(r, 7n, owner, 1, 3)).toBe(d);
-    expect(particleDraw(r, 7n, owner, 1, 4)).not.toBe(d);
-    expect(particleDraw(r, 8n, owner, 1, 3)).not.toBe(d);
-    expect(particleDraw(r, 7n, owner, 2, 3)).not.toBe(d);
-  });
-
-  it("produces success rates that match configured odds", () => {
-    const n = 20_000;
-    for (const [barrier, bps] of [[0, 6500], [1, 3000], [2, 1000]] as const) {
-      const s = countSuccesses(r, 42n, owner, barrier, n, bps);
-      expect(Math.abs(s / n - bps / 10_000)).toBeLessThan(0.015);
+  it("success rates converge to the configured probability", () => {
+    const r = new Uint8Array(64).fill(7);
+    const owner = new Uint8Array(32).fill(3);
+    for (const ppb of [650_000_000, 300_000_000, 20_000_000]) {
+      const n = 20_000;
+      const hits = particleOutcomes(r, 42n, owner, 1, 1, n, ppb).filter((o) => o.success).length;
+      expect(Math.abs(hits / n - ppb / 1e9)).toBeLessThan(0.015);
     }
   });
 
-  it("rejects malformed inputs", () => {
-    expect(() => particleDraw(new Uint8Array(63), 0n, owner, 0, 0)).toThrow();
-    expect(() => particleDraw(r, 0n, new Uint8Array(31), 0, 0)).toThrow();
+  it("an experiment's outcomes are the matching slice of the whole cell", () => {
+    const r = Uint8Array.from({ length: 64 }, (_, i) => i);
+    const owner = Keypair.generate().publicKey.toBytes();
+    const all = particleOutcomes(r, 9n, owner, 2, 3, 30, 99_808_621);
+    const slice = particleOutcomes(r, 9n, owner, 2, 3, 10, 99_808_621, 15);
+    expect(slice).toEqual(all.slice(15, 25));
   });
 });
 
-describe("mulDiv / splitFee", () => {
-  it("never loses or creates lamports in the fee split", () => {
-    fc.assert(
-      fc.property(fc.bigInt({ min: 0n, max: U64_MAX / 2n }), fc.integer({ min: 0, max: 1000 }), (total, bps) => {
-        const { fee, distributable } = splitFee(total, bps);
-        return fee + distributable === total && fee >= 0n && distributable >= 0n;
+describe("odds and reward calibration", () => {
+  const odds = deriveOdds(DEFAULT_PARAMS);
+
+  it("matches the table the program derives (programs/tunnel/src/math.rs)", () => {
+    expect(odds.transmissionPpb).toEqual([
+      [444247797, 592587953, 683660453, 745092903, 789208405],
+      [93406338, 172710376, 257433197, 344744636, 431633852],
+      [11924150, 28485755, 55861437, 99808621, 167743760],
+    ]);
+    expect(odds.reward[0][0]).toBe(nominalReward(1_000_000n, 1, 9_500, 444247797));
+  });
+
+  it("gives every energy level the same expected reward per energy unit", () => {
+    DEFAULT_PARAMS.barriers.forEach((b, bi) =>
+      DEFAULT_PARAMS.levels.forEach((l, li) => {
+        const ev = (Number(odds.reward[bi][li]) * odds.transmissionPpb[bi][li]) / 1e9 / l.cost;
+        const target = (Number(DEFAULT_PARAMS.rewardPerEnergy) * b.rewardPremiumBps) / 1e4;
+        expect(Math.abs(ev - target) / target).toBeLessThan(1e-6);
       }),
     );
   });
-  it("handles u64 extremes like the Rust implementation", () => {
-    expect(mulDiv(U64_MAX, U64_MAX, U64_MAX)).toBe(U64_MAX);
-    expect(() => mulDiv(U64_MAX, 2n, 1n)).toThrow();
-    expect(() => mulDiv(1n, 1n, 0n)).toThrow();
-  });
-  it("5% of a 1 SOL pool is 0.05 SOL", () => {
-    expect(splitFee(1_000_000_000n, 500)).toEqual({ fee: 50_000_000n, distributable: 950_000_000n });
+
+  it("rejects barriers too opaque to tunnel through", () => {
+    expect(() =>
+      deriveOdds({ ...DEFAULT_PARAMS, barriers: [DEFAULT_PARAMS.barriers[0], DEFAULT_PARAMS.barriers[1], { heightMilli: 20_000, widthMilli: 5_000, rewardPremiumBps: 10_000 }] }),
+    ).toThrow();
   });
 });
 
-describe("payouts", () => {
-  it("never pays out more than the pool, across any set of positions", () => {
+describe("payouts and emissions", () => {
+  it("pays nominal rewards in full within budget and pro rata beyond it (property)", () => {
     fc.assert(
       fc.property(
-        fc.array(fc.record({ lamports: fc.bigInt({ min: 1n, max: 10n ** 12n }), weight: fc.bigInt({ min: 0n, max: 1000n }) }), {
-          minLength: 1,
-          maxLength: 50,
-        }),
-        fc.bigInt({ min: 0n, max: 10n ** 15n }),
-        (positions, budget) => {
-          const total = positions.reduce((a, p) => a + p.lamports, 0n);
-          const totalWeight = positions.reduce((a, p) => a + p.weight, 0n);
-          const { distributable } = splitFee(total, 500);
-          const outcome = totalWeight === 0n ? "noSuccessRefund" : "rewards";
-          let paidSol = 0n;
-          let paidTok = 0n;
-          for (const p of positions) {
-            const r = computePayout({
-              outcome,
-              distributableLamports: distributable,
-              totalLamports: total,
-              totalSuccessWeight: totalWeight,
-              emissionBudget: budget,
-              positionLamports: p.lamports,
-              positionSuccessWeight: p.weight,
-            })!;
-            paidSol += r.lamports;
-            paidTok += r.tokens;
-          }
-          return paidSol <= distributable && paidTok <= budget && distributable - paidSol < BigInt(positions.length);
+        fc.array(fc.bigInt({ min: 0n, max: 10n ** 12n }), { minLength: 1, maxLength: 40 }),
+        fc.bigInt({ min: 0n, max: 10n ** 13n }),
+        (nominals, budget) => {
+          const total = nominals.reduce((a, b) => a + b, 0n);
+          const paid = nominals.map((n) => computePayout({ outcome: "rewards", totalNominal: total, emissionBudget: budget, positionNominal: n }));
+          const sum = paid.reduce((a, b) => a + b, 0n);
+          // Never exceeds the cycle budget nor any position's nominal reward.
+          expect(sum <= (total < budget ? total : budget)).toBe(true);
+          paid.forEach((p, i) => expect(p <= nominals[i]).toBe(true));
+          if (total <= budget) expect(sum).toBe(total);
+          // Rounding dust is at most one base unit per position.
+          else expect(budget - sum <= BigInt(nominals.length)).toBe(true);
         },
       ),
     );
   });
 
-  it("a Barrier III success earns 5× a Barrier I success in the same round", () => {
-    const base = { outcome: "rewards" as const, distributableLamports: 950_000_000n, totalLamports: 10n ** 9n, totalSuccessWeight: 6n, emissionBudget: 600n, positionLamports: 0n };
-    const one = computePayout({ ...base, positionSuccessWeight: 1n })!;
-    const five = computePayout({ ...base, positionSuccessWeight: 5n })!;
-    // floor division: 5 · floor(x/6) ≤ floor(5x/6) < 5 · floor(x/6) + 5
-    expect(five.lamports >= one.lamports * 5n && five.lamports < one.lamports * 5n + 5n).toBe(true);
-    expect(five.tokens).toBe(500n);
-    expect(one.tokens).toBe(100n);
+  it("pays nothing for non-reward outcomes", () => {
+    for (const outcome of ["noTunnels", "void", "empty", "pending"] as const) {
+      expect(computePayout({ outcome, totalNominal: 10n, emissionBudget: 100n, positionNominal: 10n })).toBe(0n);
+    }
   });
 
-  it("failed rounds refund 100% with no fee", () => {
-    expect(
-      computePayout({ outcome: "fullRefund", distributableLamports: 0n, totalLamports: 0n, totalSuccessWeight: 0n, emissionBudget: 0n, positionLamports: 123n, positionSuccessWeight: 0n }),
-    ).toEqual({ lamports: 123n, tokens: 0n });
+  it("decays the schedule per epoch and stays within the reserve placeholder", () => {
+    expect(scheduledEmission(DEFAULT_PARAMS, 0n)).toBe(20_000_000_000n);
+    expect(scheduledEmission(DEFAULT_PARAMS, 143n)).toBe(20_000_000_000n);
+    expect(scheduledEmission(DEFAULT_PARAMS, 144n)).toBe(19_900_000_000n);
+    const curve = emissionCurve(DEFAULT_PARAMS, 6000, 100);
+    expect(curve.at(-1)!.cumulative < 600_000_000n * 10n ** 6n).toBe(true);
   });
 
-  it("nothing is claimable before settlement", () => {
-    expect(
-      computePayout({ outcome: "pending", distributableLamports: 0n, totalLamports: 0n, totalSuccessWeight: 0n, emissionBudget: 0n, positionLamports: 1n, positionSuccessWeight: 0n }),
-    ).toBeNull();
+  it("mulDiv is exact and guards overflow", () => {
+    const max = (1n << 64n) - 1n;
+    expect(mulDiv(max, max, max)).toBe(max);
+    expect(() => mulDiv(max, 2n, 1n)).toThrow();
+    expect(() => mulDiv(1n, 1n, 0n)).toThrow();
   });
 });
 
-describe("emission schedule", () => {
-  it("matches the Rust unit-test vectors", () => {
-    expect(scheduledEmission(DEFAULT_PARAMS, 0n)).toBe(416_000_000n);
-    expect(scheduledEmission(DEFAULT_PARAMS, 1439n)).toBe(416_000_000n);
-    expect(scheduledEmission(DEFAULT_PARAMS, 1440n)).toBe(415_584_000n);
-  });
-  it("is non-increasing", () => {
-    fc.assert(
-      fc.property(fc.bigInt({ min: 0n, max: 10n ** 7n }), (r) => scheduledEmission(DEFAULT_PARAMS, r + 1440n) <= scheduledEmission(DEFAULT_PARAMS, r)),
-    );
-  });
-  it("the default schedule never exceeds the 600M mining reserve", () => {
-    const curve = emissionCurve(DEFAULT_PARAMS, 40_000, 1000);
-    const last = curve[curve.length - 1];
-    expect(last.cumulative).toBeLessThanOrEqual(TUNNEL_MINING_RESERVE);
-    expect(last.cumulative).toBeGreaterThan((TUNNEL_MINING_RESERVE * 99n) / 100n);
+describe("pda determinism", () => {
+  it("derives distinct positions per cycle and owner", async () => {
+    const { positionPda } = await import("../src/pda");
+    const a = Keypair.generate().publicKey;
+    expect(positionPda(1n, a).equals(positionPda(2n, a))).toBe(false);
+    expect(positionPda(1n, a).equals(positionPda(1n, PublicKey.default))).toBe(false);
   });
 });

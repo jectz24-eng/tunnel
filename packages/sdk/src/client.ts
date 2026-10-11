@@ -4,8 +4,8 @@
  */
 import BN from "bn.js";
 import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import {
@@ -13,34 +13,27 @@ import {
   SYSVAR_SLOT_HASHES_PUBKEY,
   SystemProgram,
   TransactionInstruction,
+  type Connection,
 } from "@solana/web3.js";
 import { IDL, coder } from "./accounts";
 import { ORAO_VRF_PROGRAM_ID, TUNNEL_PROGRAM_ID, type ProtocolParams } from "./constants";
-import {
-  oraoNetworkStatePda,
-  oraoRandomnessPda,
-  positionPda,
-  protocolPda,
-  rewardVaultPda,
-  roundPda,
-  treasuryVaultPda,
-  roundVaultPda,
-} from "./pda";
+import { cyclePda, oraoNetworkStatePda, oraoRandomnessPda, positionPda, protocolPda, rewardVaultPda } from "./pda";
 
 const BPF_UPGRADEABLE_LOADER = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 
-function build(
-  name: string,
-  accounts: Record<string, PublicKey>,
-  args: Record<string, unknown>,
-  programId: PublicKey,
-): TransactionInstruction {
+type AccountMap = Record<string, PublicKey | null | undefined>;
+
+function build(name: string, accounts: AccountMap, args: Record<string, unknown>, programId: PublicKey): TransactionInstruction {
   const def = IDL.instructions.find((i) => i.name === name);
   if (!def) throw new Error(`unknown instruction ${name}`);
   const keys = def.accounts.map((a) => {
-    const acc = a as { name: string; writable?: boolean; signer?: boolean };
+    const acc = a as { name: string; writable?: boolean; signer?: boolean; optional?: boolean };
     const pubkey = accounts[acc.name];
-    if (!pubkey) throw new Error(`${name}: missing account ${acc.name}`);
+    if (!pubkey) {
+      // Anchor encodes an absent optional account as the program id.
+      if (acc.optional) return { pubkey: programId, isWritable: false, isSigner: false };
+      throw new Error(`${name}: missing account ${acc.name}`);
+    }
     return { pubkey, isWritable: !!acc.writable, isSigner: !!acc.signer };
   });
   return new TransactionInstruction({ programId, keys, data: coder.instruction.encode(name, args) });
@@ -48,17 +41,17 @@ function build(
 
 const bn = (v: bigint | number) => new BN(v.toString());
 
-function encodeParams(p: ProtocolParams) {
+export function encodeParams(p: ProtocolParams) {
   return {
-    barriers: p.barriers.map((b) => ({ transmission_bps: b.transmissionBps, reward_weight: b.rewardWeight })),
-    particle_cost_lamports: bn(p.particleCostLamports),
-    round_duration_secs: p.roundDurationSecs,
-    protocol_fee_bps: p.protocolFeeBps,
-    max_particles_per_position: p.maxParticlesPerPosition,
+    barriers: p.barriers.map((b) => ({ height_milli: b.heightMilli, width_milli: b.widthMilli, reward_premium_bps: b.rewardPremiumBps })),
+    levels: p.levels.map((l) => ({ energy_bps: l.energyBps, cost: l.cost })),
+    energy_per_cycle: p.energyPerCycle,
+    reward_per_energy: bn(p.rewardPerEnergy),
+    cycle_duration_secs: p.cycleDurationSecs,
     randomness_timeout_secs: p.randomnessTimeoutSecs,
-    initial_emission_per_round: bn(p.initialEmissionPerRound),
+    initial_emission_per_cycle: bn(p.initialEmissionPerCycle),
     emission_decay_bps: p.emissionDecayBps,
-    emission_epoch_rounds: p.emissionEpochRounds,
+    emission_epoch_cycles: p.emissionEpochCycles,
   };
 }
 
@@ -71,7 +64,7 @@ export class TunnelInstructions {
 
   // ---- administration ----
 
-  initialize(a: { admin: PublicKey; tunnelMint: PublicKey; treasury: PublicKey; params: ProtocolParams }) {
+  initialize(a: { admin: PublicKey; tunnelMint: PublicKey; gatekeeper?: PublicKey; params: ProtocolParams }) {
     const [programData] = PublicKey.findProgramAddressSync([this.programId.toBytes()], BPF_UPGRADEABLE_LOADER);
     return build(
       "initialize",
@@ -80,13 +73,12 @@ export class TunnelInstructions {
         protocol: this.protocol,
         tunnel_mint: a.tunnelMint,
         reward_vault: rewardVaultPda(this.programId),
-        treasury_vault: treasuryVaultPda(this.programId),
         program: this.programId,
         program_data: programData,
         token_program: TOKEN_PROGRAM_ID,
         system_program: SystemProgram.programId,
       },
-      { treasury: a.treasury, params: encodeParams(a.params) },
+      { gatekeeper: a.gatekeeper ?? PublicKey.default, params: encodeParams(a.params) },
       this.programId,
     );
   }
@@ -99,8 +91,9 @@ export class TunnelInstructions {
     return build("set_paused", { admin, protocol: this.protocol }, { paused }, this.programId);
   }
 
-  setTreasury(admin: PublicKey, treasury: PublicKey) {
-    return build("set_treasury", { admin, protocol: this.protocol }, { treasury }, this.programId);
+  /** `PublicKey.default` disables co-signing. */
+  setGatekeeper(admin: PublicKey, gatekeeper: PublicKey) {
+    return build("set_gatekeeper", { admin, protocol: this.protocol }, { gatekeeper }, this.programId);
   }
 
   proposeAdmin(admin: PublicKey, newAdmin: PublicKey) {
@@ -127,161 +120,138 @@ export class TunnelInstructions {
     );
   }
 
-  // ---- rounds ----
+  // ---- cycles ----
 
-  openRound(payer: PublicKey, nextRoundId: bigint) {
+  openCycle(payer: PublicKey, nextCycleId: bigint) {
     return build(
-      "open_round",
-      {
-        payer,
-        protocol: this.protocol,
-        round: roundPda(nextRoundId, this.programId),
-        round_vault: roundVaultPda(nextRoundId, this.programId),
-        system_program: SystemProgram.programId,
-      },
+      "open_cycle",
+      { payer, protocol: this.protocol, cycle: cyclePda(nextCycleId, this.programId), system_program: SystemProgram.programId },
       {},
       this.programId,
     );
   }
 
-  closeRound(roundId: bigint) {
+  closeCycle(cycleId: bigint) {
     return build(
-      "close_round",
-      { protocol: this.protocol, round: roundPda(roundId, this.programId), slot_hashes: SYSVAR_SLOT_HASHES_PUBKEY },
-      { round_id: bn(roundId) },
+      "close_cycle",
+      { protocol: this.protocol, cycle: cyclePda(cycleId, this.programId), slot_hashes: SYSVAR_SLOT_HASHES_PUBKEY },
+      { cycle_id: bn(cycleId) },
       this.programId,
     );
   }
 
   /** `vrfTreasury` comes from ORAO's network state (`fetchOraoTreasury`). */
-  requestRandomness(a: { cranker: PublicKey; roundId: bigint; vrfSeed: Uint8Array; vrfTreasury: PublicKey }) {
+  requestRandomness(a: { cranker: PublicKey; cycleId: bigint; vrfSeed: Uint8Array; vrfTreasury: PublicKey }) {
     return build(
       "request_randomness",
       {
         cranker: a.cranker,
-        round: roundPda(a.roundId, this.programId),
+        cycle: cyclePda(a.cycleId, this.programId),
         vrf_request: oraoRandomnessPda(a.vrfSeed),
         vrf_config: oraoNetworkStatePda(),
         vrf_treasury: a.vrfTreasury,
         vrf_program: ORAO_VRF_PROGRAM_ID,
         system_program: SystemProgram.programId,
       },
-      { round_id: bn(a.roundId) },
+      { cycle_id: bn(a.cycleId) },
       this.programId,
     );
   }
 
-  revealRandomness(roundId: bigint, vrfSeed: Uint8Array) {
+  revealRandomness(cycleId: bigint, vrfSeed: Uint8Array) {
     return build(
       "reveal_randomness",
-      { round: roundPda(roundId, this.programId), vrf_request: oraoRandomnessPda(vrfSeed) },
-      { round_id: bn(roundId) },
+      { cycle: cyclePda(cycleId, this.programId), vrf_request: oraoRandomnessPda(vrfSeed) },
+      { cycle_id: bn(cycleId) },
       this.programId,
     );
   }
 
-  settlePosition(roundId: bigint, owner: PublicKey) {
+  settlePosition(cycleId: bigint, owner: PublicKey) {
     return build(
       "settle_position",
-      { round: roundPda(roundId, this.programId), position: positionPda(roundId, owner, this.programId) },
-      { round_id: bn(roundId) },
+      { cycle: cyclePda(cycleId, this.programId), position: positionPda(cycleId, owner, this.programId) },
+      { cycle_id: bn(cycleId) },
       this.programId,
     );
   }
 
-  finalizeRound(roundId: bigint) {
+  finalizeCycle(cycleId: bigint) {
     return build(
-      "finalize_round",
-      {
-        protocol: this.protocol,
-        round: roundPda(roundId, this.programId),
-        round_vault: roundVaultPda(roundId, this.programId),
-        treasury_vault: treasuryVaultPda(this.programId),
-      },
-      { round_id: bn(roundId) },
+      "finalize_cycle",
+      { protocol: this.protocol, cycle: cyclePda(cycleId, this.programId) },
+      { cycle_id: bn(cycleId) },
       this.programId,
     );
   }
 
-  /** `vrfSeed` is the round's seed (all zeros if the round never closed). */
-  recoverRound(roundId: bigint, vrfSeed: Uint8Array) {
+  /** `vrfSeed` is the cycle's seed (all zeros if the cycle never closed). */
+  voidCycle(cycleId: bigint, vrfSeed: Uint8Array) {
     return build(
-      "recover_round",
-      { protocol: this.protocol, round: roundPda(roundId, this.programId), vrf_request: oraoRandomnessPda(vrfSeed) },
-      { round_id: bn(roundId) },
+      "void_cycle",
+      { protocol: this.protocol, cycle: cyclePda(cycleId, this.programId), vrf_request: oraoRandomnessPda(vrfSeed) },
+      { cycle_id: bn(cycleId) },
       this.programId,
     );
   }
 
-  sweepRound(roundId: bigint) {
+  sweepCycle(cycleId: bigint) {
     return build(
-      "sweep_round",
-      {
-        protocol: this.protocol,
-        round: roundPda(roundId, this.programId),
-        round_vault: roundVaultPda(roundId, this.programId),
-        treasury_vault: treasuryVaultPda(this.programId),
-      },
-      { round_id: bn(roundId) },
-      this.programId,
-    );
-  }
-
-  /** Permissionless; pays only the treasury recorded in the Protocol account. */
-  withdrawFees(treasury: PublicKey) {
-    return build(
-      "withdraw_fees",
-      { protocol: this.protocol, treasury_vault: treasuryVaultPda(this.programId), treasury },
-      {},
+      "sweep_cycle",
+      { protocol: this.protocol, cycle: cyclePda(cycleId, this.programId) },
+      { cycle_id: bn(cycleId) },
       this.programId,
     );
   }
 
   // ---- users ----
 
-  deployParticles(a: { owner: PublicKey; roundId: bigint; barrier: number; count: number }) {
+  deployParticles(a: { owner: PublicKey; cycleId: bigint; barrier: number; level: number; count: number; gatekeeper?: PublicKey | null }) {
     return build(
       "deploy_particles",
       {
         owner: a.owner,
         protocol: this.protocol,
-        round: roundPda(a.roundId, this.programId),
-        round_vault: roundVaultPda(a.roundId, this.programId),
-        position: positionPda(a.roundId, a.owner, this.programId),
+        cycle: cyclePda(a.cycleId, this.programId),
+        position: positionPda(a.cycleId, a.owner, this.programId),
+        gatekeeper: a.gatekeeper ?? null,
         system_program: SystemProgram.programId,
       },
-      { round_id: bn(a.roundId), barrier: a.barrier, count: a.count },
+      { cycle_id: bn(a.cycleId), barrier: a.barrier, level: a.level, count: a.count },
       this.programId,
     );
   }
 
-  claim(a: { owner: PublicKey; roundId: bigint; tunnelMint: PublicKey }) {
-    return build(
+  /**
+   * Claims a position. When a non-zero payout is expected, the owner's
+   * $TUNNEL token account is created idempotently first (the user pays its
+   * rent once); a zero payout just closes the position and returns its rent.
+   */
+  claim(a: { owner: PublicKey; cycleId: bigint; tunnelMint: PublicKey; expectsTokens: boolean }): TransactionInstruction[] {
+    const ata = getAssociatedTokenAddressSync(a.tunnelMint, a.owner);
+    const ix = build(
       "claim",
       {
         owner: a.owner,
         protocol: this.protocol,
-        round: roundPda(a.roundId, this.programId),
-        round_vault: roundVaultPda(a.roundId, this.programId),
-        position: positionPda(a.roundId, a.owner, this.programId),
+        cycle: cyclePda(a.cycleId, this.programId),
+        position: positionPda(a.cycleId, a.owner, this.programId),
         tunnel_mint: a.tunnelMint,
         reward_vault: rewardVaultPda(this.programId),
-        owner_token_account: getAssociatedTokenAddressSync(a.tunnelMint, a.owner),
+        owner_token_account: a.expectsTokens ? ata : null,
         token_program: TOKEN_PROGRAM_ID,
-        associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
-        system_program: SystemProgram.programId,
       },
-      { round_id: bn(a.roundId) },
+      { cycle_id: bn(a.cycleId) },
       this.programId,
     );
+    return a.expectsTokens ? [createAssociatedTokenAccountIdempotentInstruction(a.owner, ata, a.owner, a.tunnelMint), ix] : [ix];
   }
 }
 
 /** ORAO's fee treasury, read from its network-state account (offset 8 + 32: config.authority, then treasury). */
-export async function fetchOraoTreasury(connection: import("@solana/web3.js").Connection): Promise<PublicKey> {
+export async function fetchOraoTreasury(connection: Connection): Promise<PublicKey> {
   const info = await connection.getAccountInfo(oraoNetworkStatePda());
   if (!info) throw new Error("ORAO VRF network state not found on this cluster");
-  // NetworkState { config: NetworkConfiguration { authority: Pubkey, treasury: Pubkey, ... }, ... }
   return new PublicKey(info.data.subarray(8 + 32, 8 + 64));
 }
 
@@ -290,7 +260,7 @@ export async function fetchOraoTreasury(connection: import("@solana/web3.js").Co
  * Layout: 8-byte discriminator | u8 tag (0 Pending, 1 Fulfilled) | client (32) | seed (32) | randomness (64, fulfilled only).
  */
 export async function fetchOraoRandomness(
-  connection: import("@solana/web3.js").Connection,
+  connection: Connection,
   seed: Uint8Array,
 ): Promise<{ exists: boolean; fulfilled: boolean; randomness: Uint8Array | null }> {
   const info = await connection.getAccountInfo(oraoRandomnessPda(seed));

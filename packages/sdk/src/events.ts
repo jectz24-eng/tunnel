@@ -6,21 +6,20 @@ export type TunnelEventName =
   | "ProtocolInitialized"
   | "ParamsUpdated"
   | "PauseChanged"
-  | "TreasuryChanged"
+  | "GatekeeperChanged"
   | "AdminProposed"
   | "AdminAccepted"
   | "ReserveFunded"
-  | "RoundOpened"
+  | "CycleOpened"
   | "ParticlesDeployed"
-  | "RoundClosed"
+  | "CycleClosed"
   | "RandomnessRequested"
   | "RandomnessRevealed"
   | "PositionSettled"
-  | "RoundFinalized"
-  | "RoundFailed"
+  | "CycleFinalized"
+  | "CycleVoided"
   | "RewardClaimed"
-  | "RoundSwept"
-  | "FeesWithdrawn";
+  | "CycleSwept";
 
 export interface ParsedEvent {
   name: TunnelEventName;

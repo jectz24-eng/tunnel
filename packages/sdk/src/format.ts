@@ -16,6 +16,18 @@ export const formatSol = (lamports: bigint, maxFraction = 4) => fixed(lamports, 
 export const formatTunnel = (units: bigint, maxFraction = 2) => fixed(units, TUNNEL_DECIMALS, maxFraction);
 export const formatBps = (bps: number) => `${(bps / 100).toFixed(bps % 100 === 0 ? 0 : 2)}%`;
 
+/** Probability in parts per billion → "44.42%" (adaptive precision for small values). */
+export function formatPpb(ppb: number, digits = 2) {
+  const pct = ppb / 1e7;
+  if (pct === 0) return "0%";
+  if (pct < 0.01) return `${pct.toPrecision(2)}%`;
+  if (pct < 1) return `${pct.toFixed(Math.max(digits, 3))}%`;
+  return `${pct.toFixed(digits)}%`;
+}
+
+/** Fixed-point thousandths → "1.300". */
+export const formatMilli = (milli: number, digits = 3) => (milli / 1000).toFixed(digits);
+
 export function parseSolToLamports(input: string): bigint | null {
   const m = /^\s*(\d+)(?:\.(\d{0,9}))?\s*$/.exec(input);
   if (!m) return null;

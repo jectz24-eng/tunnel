@@ -1,6 +1,7 @@
 export * from "./constants";
 export * from "./pda";
 export * from "./math";
+export * from "./physics";
 export * from "./accounts";
 export * from "./client";
 export * from "./events";
