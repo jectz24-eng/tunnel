@@ -482,8 +482,9 @@ describe("tunnel", function () {
     });
 
     it("exposes no instruction that moves the reserve except user claims", () => {
+      // initialize creates the (empty) vault; fund_reserve only adds; claim pays a settled position.
       const touchesVault = IDL.instructions.filter((i) => i.accounts.some((a) => (a as { name: string }).name === "reward_vault" && (a as { writable?: boolean }).writable));
-      expect(touchesVault.map((i) => i.name).sort()).to.deep.equal(["claim", "fund_reserve"]);
+      expect(touchesVault.map((i) => i.name).sort()).to.deep.equal(["claim", "fund_reserve", "initialize"]);
     });
   });
 });
