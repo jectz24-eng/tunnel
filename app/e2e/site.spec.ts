@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const PAGES = ["/", "/mine", "/protocol", "/stats", "/leaderboard", "/tokenomics", "/docs", "/dashboard", "/rounds/0"];
+const PAGES = ["/", "/accelerator", "/how-it-works", "/laboratory", "/leaderboard", "/tokenomics", "/history", "/history/cycle/0", "/admin"];
 
 test.describe("every page", () => {
   for (const path of PAGES) {
@@ -18,28 +18,28 @@ test.describe("every page", () => {
   }
 });
 
-test("homepage hero, CTAs and illustrative label", async ({ page }) => {
+test("navigation has every section plus wallet and mining CTAs", async ({ page, isMobile }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Mine through");
-  await expect(page.getByRole("link", { name: "Start Mining" })).toHaveAttribute("href", "/mine");
-  await expect(page.getByRole("link", { name: "Explore Protocol" })).toHaveAttribute("href", "/protocol");
-  await expect(page.getByText("ILLUSTRATIVE SIMULATION")).toBeVisible();
-  await expect(page.locator("canvas").first()).toBeVisible();
-});
-
-test("never shows fabricated protocol numbers when the program is not deployed", async ({ page }) => {
-  await page.goto("/");
-  const banner = page.getByText(/not initialized on/);
-  if (await banner.isVisible().catch(() => false)) {
-    // Every protocol stat must be an em dash, not a zero.
-    const stats = page.locator("text=Protocol state").locator("xpath=ancestor::div[contains(@class,'panel')]");
-    await expect(stats).not.toContainText(/\b0\.00\b/);
+  if (isMobile) await page.getByRole("button", { name: "Menu" }).click();
+  for (const label of ["Accelerator", "How it works", "Laboratory", "Leaderboard", "Tokenomics", "History"]) {
+    await expect(page.getByRole("link", { name: label, exact: true }).first()).toBeVisible();
   }
+  await expect(page.getByRole("button", { name: /connect wallet/i }).first()).toBeVisible();
 });
 
-test("mine page: deposit is gated behind wallet connection and confirmation", async ({ page }) => {
-  await page.goto("/mine");
-  const cta = page.getByRole("button", { name: /Connect wallet to mine/ });
+test("hero: headline, CTAs and the visual-simulation label", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("MINE THROUGH");
+  await expect(page.getByRole("link", { name: /Enter the accelerator/i }).first()).toHaveAttribute("href", "/accelerator");
+  await expect(page.getByRole("link", { name: /Explore the protocol/i })).toHaveAttribute("href", "#protocol");
+  await expect(page.getByText("VISUAL SIMULATION · NOT LIVE DATA")).toBeVisible();
+  await expect(page.getByText("TUNNEL / QUANTUM EXPERIMENT 001").first()).toBeVisible();
+});
+
+test("accelerator: deploying is gated behind a wallet, and costs are stated", async ({ page }) => {
+  await page.goto("/accelerator");
+  await expect(page.getByText(/Free to mine/).first()).toBeVisible();
+  const cta = page.getByRole("button", { name: /Connect wallet to deploy/ });
   await expect(cta).toBeVisible();
   await cta.click();
   await expect(page.getByRole("dialog", { name: "Connect a Solana wallet" })).toBeVisible();
@@ -48,25 +48,42 @@ test("mine page: deposit is gated behind wallet connection and confirmation", as
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("docs include every required section", async ({ page }) => {
-  await page.goto("/docs");
-  for (const id of ["introduction", "science", "mining", "barriers", "commitments", "sol-rewards", "token-rewards", "rounds", "randomness", "contracts", "risks", "fees", "wallet-security", "tokenomics", "admin", "audit", "faq"]) {
-    await expect(page.locator(`#${id}`)).toHaveCount(1);
-  }
-  await expect(page.getByText(/does not use\s+quantum hardware/i).first()).toBeVisible();
+test("accelerator: probabilities update from the configuration", async ({ page }) => {
+  await page.goto("/accelerator");
+  const prob = page.locator("dt", { hasText: "Tunneling probability" }).locator("xpath=following-sibling::dd[1]");
+  await page.getByRole("radio", { name: /LOW/ }).click();
+  await page.getByRole("radio", { name: /E5/ }).click();
+  const low = await prob.innerText();
+  await page.getByRole("radio", { name: /HIGH/ }).click();
+  await page.getByRole("radio", { name: /E1/ }).click();
+  const high = await prob.innerText();
+  expect(parseFloat(low)).toBeGreaterThan(parseFloat(high));
 });
 
-test("tokenomics shows the 400M as pending, not allocated", async ({ page }) => {
+test("laboratory: sliders drive the transmission readout", async ({ page }) => {
+  await page.goto("/laboratory");
+  const readout = page.locator("dt", { hasText: "Transmission T" }).locator("xpath=following-sibling::dd[1]");
+  const before = await readout.innerText();
+  await page.locator("#lab-a").fill("3");
+  await expect(readout).not.toHaveText(before);
+});
+
+test("tokenomics labels unconfigured allocations as placeholders and lists risks", async ({ page }) => {
   await page.goto("/tokenomics");
-  await expect(page.getByText(/Pending owner approval of final tokenomics/)).toBeVisible();
+  await expect(page.getByText(/PLACEHOLDER/).first()).toBeVisible();
+  await expect(page.locator("#risks")).toContainText(/no guaranteed price/i);
+  for (const id of ["the-token", "the-emissions", "the-energy", "the-physics", "the-randomness", "the-treasury", "risks"]) await expect(page.locator(`#${id}`)).toHaveCount(1);
 });
 
-test("APIs respond with explicit availability flags", async ({ request }) => {
-  for (const p of ["/api/stats", "/api/activity", "/api/rounds", "/api/leaderboard"]) {
+test("APIs respond with explicit availability flags and validate input", async ({ request }) => {
+  for (const p of ["/api/stats", "/api/activity", "/api/cycles", "/api/experiments", "/api/leaderboard", "/api/lab"]) {
     const r = await request.get(p);
     expect(r.ok()).toBe(true);
     expect(typeof (await r.json()).available).toBe("boolean");
   }
   expect((await request.get("/api/wallet/not-an-address")).status()).toBe(400);
+  expect((await request.get("/api/cycles/abc")).status()).toBe(400);
   expect((await request.post("/api/auth/verify", { data: { address: "x" } })).status()).toBe(400);
+  expect((await request.get("/api/admin")).status()).toBe(401);
+  expect([401, 409]).toContain((await request.post("/api/gatekeeper", { data: {} })).status());
 });

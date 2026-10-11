@@ -40,7 +40,7 @@ export function ConfigPanel({
   const ppb = odds.transmissionPpb[b][l];
   const reward = odds.reward[b][l];
   const meta = BARRIER_META[b];
-  const n = Math.min(count, Math.max(1, maxCount));
+  const n = maxCount === 0 ? 0 : Math.min(count, maxCount);
   const used = n * cost;
   const pctLeft = (left / energyPerCycle) * 100;
   const pctAfter = (Math.max(0, left - used) / energyPerCycle) * 100;
@@ -180,9 +180,9 @@ export function ConfigPanel({
       <dl className="grid grid-cols-2 gap-px bg-line-soft">
         {[
           ["Tunneling probability", formatPpb(ppb), "per particle", meta.color],
-          ["≥ 1 tunnels", `${(atLeastOneProbability(ppb, n) * 100).toFixed(n > 1 ? 1 : 2)}%`, `${n} independent draws`],
+          ["≥ 1 tunnels", n ? `${(atLeastOneProbability(ppb, n) * 100).toFixed(n > 1 ? 1 : 2)}%` : "—", n ? `${n} independent draw${n === 1 ? "" : "s"}` : "no energy left this cycle"],
           ["Reward per success", `${formatTunnel(reward)}`, "$TUNNEL, before cycle cap"],
-          ["Expected reward", `${formatTunnel(expectedReward(odds, b, l, n))}`, `potential up to ${formatTunnel(reward * BigInt(n), 1)}`],
+          ["Expected reward", n ? `${formatTunnel(expectedReward(odds, b, l, n))}` : "—", n ? `potential up to ${formatTunnel(reward * BigInt(n), 1)}` : "refills next cycle"],
         ].map(([k, v, sub, c]) => (
           <div key={k} className="bg-panel px-5 py-4">
             <dt className="label">{k}</dt>

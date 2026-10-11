@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 /**
  * Minimal shared polling cache: one in-flight request and one timer per key,
  * no matter how many components subscribe. Keeps RPC load bounded.
+ *
+ * The timer runs while at least one subscriber exists. Unsubscribing stops it
+ * only after a short grace period, because React re-subscribes during
+ * re-renders and that must not stall polling.
  */
 interface Entry<T> {
   data: T | undefined;
@@ -13,6 +17,7 @@ interface Entry<T> {
   updatedAt: number;
   listeners: Set<() => void>;
   timer: ReturnType<typeof setInterval> | null;
+  stopTimer: ReturnType<typeof setTimeout> | null;
   fetcher: () => Promise<T>;
   interval: number;
   inflight: Promise<void> | null;
@@ -52,6 +57,29 @@ async function run<T>(e: Entry<T>) {
   return e.inflight;
 }
 
+function start(e: Entry<any>) {
+  if (e.stopTimer) {
+    clearTimeout(e.stopTimer);
+    e.stopTimer = null;
+  }
+  if (e.timer) return;
+  if (!e.inflight && Date.now() - e.updatedAt > e.interval) void run(e);
+  e.timer = setInterval(() => {
+    if (typeof document === "undefined" || document.visibilityState === "visible") void run(e);
+  }, e.interval);
+}
+
+function scheduleStop(e: Entry<any>) {
+  if (e.stopTimer) clearTimeout(e.stopTimer);
+  e.stopTimer = setTimeout(() => {
+    e.stopTimer = null;
+    if (e.listeners.size === 0 && e.timer) {
+      clearInterval(e.timer);
+      e.timer = null;
+    }
+  }, 1_000);
+}
+
 export function refresh(key: string) {
   const e = cache.get(key);
   if (e) void run(e);
@@ -61,44 +89,38 @@ export function refreshMatching(prefix: string) {
   for (const [k, e] of cache) if (k.startsWith(prefix)) void run(e);
 }
 
-export function usePoll<T>(key: string | null, fetcher: () => Promise<T>, interval = 5_000): Snapshot<T> {
-  useEffect(() => {
-    if (!key) return;
-    let e = cache.get(key) as Entry<T> | undefined;
-    if (!e) {
-      e = { data: undefined, error: null, loading: true, updatedAt: 0, listeners: new Set(), timer: null, fetcher, interval, inflight: null, snapshot: EMPTY };
-      cache.set(key, e);
-    }
-    e.fetcher = fetcher;
-    if (!e.timer) {
-      void run(e);
-      e.timer = setInterval(() => {
-        if (typeof document === "undefined" || document.visibilityState === "visible") void run(e!);
-      }, interval);
-    }
-    return () => {
-      if (e && e.listeners.size === 0 && e.timer) {
-        clearInterval(e.timer);
-        e.timer = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, interval]);
+function entry<T>(key: string, fetcher: () => Promise<T>, interval: number): Entry<T> {
+  let e = cache.get(key) as Entry<T> | undefined;
+  if (!e) {
+    e = { data: undefined, error: null, loading: true, updatedAt: 0, listeners: new Set(), timer: null, stopTimer: null, fetcher, interval, inflight: null, snapshot: EMPTY };
+    cache.set(key, e);
+  }
+  return e;
+}
 
-  return useSyncExternalStore(
-    (cb) => {
+export function usePoll<T>(key: string | null, fetcher: () => Promise<T>, interval = 5_000): Snapshot<T> {
+  // Keep the latest fetcher (it may close over fresh values) without restarting the timer.
+  useEffect(() => {
+    if (key) entry(key, fetcher, interval).fetcher = fetcher;
+  });
+
+  const subscribe = useCallback(
+    (cb: () => void) => {
       if (!key) return () => {};
-      const e = cache.get(key);
-      if (!e) return () => {};
+      const e = entry(key, fetcher, interval);
       e.listeners.add(cb);
+      start(e);
       return () => {
         e.listeners.delete(cb);
-        if (e.listeners.size === 0 && e.timer) {
-          clearInterval(e.timer);
-          e.timer = null;
-        }
+        if (e.listeners.size === 0) scheduleStop(e);
       };
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [key, interval],
+  );
+
+  return useSyncExternalStore(
+    subscribe,
     () => (key ? (cache.get(key)?.snapshot ?? EMPTY) : EMPTY),
     () => EMPTY,
   );
