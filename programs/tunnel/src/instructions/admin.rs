@@ -4,6 +4,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 use crate::constants::*;
 use crate::errors::TunnelError;
 use crate::events::*;
+use crate::math;
 use crate::program::Tunnel;
 use crate::state::*;
 
@@ -32,14 +33,6 @@ pub struct Initialize<'info> {
         token::token_program = token_program,
     )]
     pub reward_vault: Account<'info, TokenAccount>,
-    #[account(
-        init,
-        payer = admin,
-        space = 8 + TreasuryVault::INIT_SPACE,
-        seeds = [TREASURY_VAULT_SEED],
-        bump
-    )]
-    pub treasury_vault: Account<'info, TreasuryVault>,
     /// Only the program's upgrade authority may initialize, which prevents
     /// anyone front-running initialization with their own config.
     #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
@@ -50,38 +43,41 @@ pub struct Initialize<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn initialize(ctx: Context<Initialize>, treasury: Pubkey, params: ProtocolParams) -> Result<()> {
+pub fn initialize(ctx: Context<Initialize>, gatekeeper: Pubkey, params: ProtocolParams) -> Result<()> {
     params.validate()?;
-    ctx.accounts.treasury_vault.bump = ctx.bumps.treasury_vault;
+    let odds = math::derive_odds(&params)?;
     let protocol = &mut ctx.accounts.protocol;
     protocol.set_inner(Protocol {
         admin: ctx.accounts.admin.key(),
         pending_admin: None,
-        treasury,
+        gatekeeper,
         tunnel_mint: ctx.accounts.tunnel_mint.key(),
         reward_vault: ctx.accounts.reward_vault.key(),
         params,
+        odds,
         paused: false,
-        next_round_id: 0,
-        last_round_open_ts: 0,
-        last_round_close_ts: 0,
+        next_cycle_id: 0,
+        last_cycle_open_ts: 0,
+        last_cycle_close_ts: 0,
         reserve_available: 0,
         reserve_funded_total: 0,
-        total_lamports_committed: 0,
+        total_experiments: 0,
         total_particles: 0,
+        total_energy: 0,
         total_successes: 0,
         total_tokens_allocated: 0,
-        total_fees_lamports: 0,
-        rounds_settled: 0,
+        total_tokens_claimed: 0,
+        cycles_settled: 0,
         bump: ctx.bumps.protocol,
         reward_vault_bump: ctx.bumps.reward_vault,
     });
     emit!(ProtocolInitialized {
         admin: protocol.admin,
-        treasury,
+        gatekeeper,
         tunnel_mint: protocol.tunnel_mint,
         reward_vault: protocol.reward_vault,
         params,
+        odds,
     });
     Ok(())
 }
@@ -100,26 +96,31 @@ pub struct AdminOnly<'info> {
     pub protocol: Account<'info, Protocol>,
 }
 
-/// Takes effect for rounds opened after this call. Existing rounds keep the
-/// snapshot taken in `open_round`, so odds can never change under a deposit.
+/// Takes effect for cycles opened after this call. Existing cycles keep the
+/// snapshot taken in `open_cycle`, so odds can never change under a deployment.
+/// The odds table is re-derived from the physics model here; it cannot be set directly.
 pub fn update_params(ctx: Context<AdminOnly>, params: ProtocolParams) -> Result<()> {
     params.validate()?;
-    ctx.accounts.protocol.params = params;
-    emit!(ParamsUpdated { params });
+    let odds = math::derive_odds(&params)?;
+    let protocol = &mut ctx.accounts.protocol;
+    protocol.params = params;
+    protocol.odds = odds;
+    emit!(ParamsUpdated { params, odds });
     Ok(())
 }
 
-/// Pausing blocks new rounds and new deposits only. Closing, settlement,
-/// claims and refunds always remain available so funds can never be frozen.
+/// Pausing blocks new cycles and new deployments only. Closing, settlement,
+/// claims and voiding always remain available so rewards can never be frozen.
 pub fn set_paused(ctx: Context<AdminOnly>, paused: bool) -> Result<()> {
     ctx.accounts.protocol.paused = paused;
     emit!(PauseChanged { paused });
     Ok(())
 }
 
-pub fn set_treasury(ctx: Context<AdminOnly>, treasury: Pubkey) -> Result<()> {
-    ctx.accounts.protocol.treasury = treasury;
-    emit!(TreasuryChanged { treasury });
+/// `Pubkey::default()` disables the co-signing requirement.
+pub fn set_gatekeeper(ctx: Context<AdminOnly>, gatekeeper: Pubkey) -> Result<()> {
+    ctx.accounts.protocol.gatekeeper = gatekeeper;
+    emit!(GatekeeperChanged { gatekeeper });
     Ok(())
 }
 
@@ -148,33 +149,6 @@ pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------- fees
-
-#[derive(Accounts)]
-pub struct WithdrawFees<'info> {
-    #[account(seeds = [PROTOCOL_SEED], bump = protocol.bump)]
-    pub protocol: Account<'info, Protocol>,
-    #[account(mut, seeds = [TREASURY_VAULT_SEED], bump = treasury_vault.bump)]
-    pub treasury_vault: Account<'info, TreasuryVault>,
-    /// CHECK: lamport recipient only; must equal the configured treasury.
-    #[account(mut, address = protocol.treasury @ TunnelError::TreasuryMismatch)]
-    pub treasury: UncheckedAccount<'info>,
-}
-
-/// Permissionless: forwards accumulated fees (everything above the vault's
-/// rent-exempt minimum) to the configured treasury. The destination is fixed
-/// by the Protocol account, so calling it can only ever pay the treasury.
-pub fn withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()> {
-    let info = ctx.accounts.treasury_vault.to_account_info();
-    let floor = Rent::get()?.minimum_balance(info.data_len());
-    let amount = info.lamports().saturating_sub(floor);
-    require!(amount > 0, TunnelError::ZeroAmount);
-    ctx.accounts.treasury_vault.sub_lamports(amount)?;
-    ctx.accounts.treasury.add_lamports(amount)?;
-    emit!(FeesWithdrawn { treasury: ctx.accounts.treasury.key(), lamports: amount });
-    Ok(())
-}
-
 // ---------------------------------------------------------------- reserve
 
 #[derive(Accounts)]
@@ -200,7 +174,7 @@ pub struct FundReserve<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// Anyone may add $TUNNEL to the mining reserve. Tokens can only leave the
+/// Anyone may add $TUNNEL to the emissions reserve. Tokens can only leave the
 /// vault through `claim`, so the reserve can never be withdrawn by the admin.
 pub fn fund_reserve(ctx: Context<FundReserve>, amount: u64) -> Result<()> {
     require!(amount > 0, TunnelError::ZeroAmount);

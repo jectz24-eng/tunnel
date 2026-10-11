@@ -1,7 +1,7 @@
 [package]
 name = "tunnel"
 version = "0.1.0"
-description = "TUNNEL — quantum-inspired mining protocol on Solana"
+description = "TUNNEL — Quantum Tunneling Protocol on Solana"
 edition = "2021"
 rust-version = "1.84"
 license = "UNLICENSED"
@@ -25,3 +25,5 @@ orao-solana-vrf = { version = "0.7.0", default-features = false, features = ["cp
 # Pinned for compatibility with the Solana platform-tools rustc (same pin as ORAO's examples).
 blake3 = "=1.8.2"
 solana-sha256-hasher = "2.3.0"
+# Pure-Rust soft-float math (sinh, sqrt) for deriving odds from the physics model.
+libm = "0.2"

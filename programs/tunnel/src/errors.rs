@@ -12,60 +12,62 @@ pub enum TunnelError {
     InvalidParams,
     #[msg("Invalid barrier index")]
     InvalidBarrier,
+    #[msg("Invalid energy level")]
+    InvalidLevel,
     #[msg("Particle count must be greater than zero")]
     ZeroParticles,
-    #[msg("Position particle limit exceeded for this round")]
-    PositionLimitExceeded,
-    #[msg("Round is not open for deposits")]
-    RoundNotOpen,
-    #[msg("Round has not started yet")]
-    RoundNotStarted,
-    #[msg("Round deposit window has ended")]
-    RoundExpired,
-    #[msg("Round deposit window is still running")]
-    RoundStillOpen,
-    #[msg("The next round cannot be scheduled yet")]
-    RoundScheduleConflict,
-    #[msg("Round is not awaiting randomness")]
+    #[msg("Not enough particle energy left in this cycle")]
+    EnergyExhausted,
+    #[msg("Cycle is not open for deployments")]
+    CycleNotOpen,
+    #[msg("Cycle has not started yet")]
+    CycleNotStarted,
+    #[msg("Cycle deployment window has ended")]
+    CycleExpired,
+    #[msg("Cycle deployment window is still running")]
+    CycleStillOpen,
+    #[msg("The next cycle cannot be scheduled yet")]
+    CycleScheduleConflict,
+    #[msg("Cycle is not awaiting randomness")]
     NotAwaitingRandomness,
-    #[msg("Round is not closed")]
-    RoundNotClosed,
+    #[msg("Cycle is not closed")]
+    CycleNotClosed,
     #[msg("Slot hashes sysvar is unavailable or malformed")]
     SlotHashesUnavailable,
     #[msg("Randomness has not been fulfilled yet")]
     RandomnessNotFulfilled,
-    #[msg("Randomness account does not match the round request")]
+    #[msg("Randomness account does not match the cycle request")]
     RandomnessAccountMismatch,
-    #[msg("Round is not resolving")]
+    #[msg("Cycle is not resolving")]
     NotResolving,
     #[msg("Position has already been settled")]
     PositionAlreadySettled,
     #[msg("Not every position has been settled")]
     PositionsPending,
-    #[msg("Round is not settled")]
-    RoundNotSettled,
+    #[msg("Cycle is not settled")]
+    CycleNotSettled,
     #[msg("Position has already been claimed")]
     AlreadyClaimed,
     #[msg("Position is not settled")]
     PositionNotSettled,
-    #[msg("Round cannot be recovered yet")]
+    #[msg("Cycle cannot be voided yet")]
     RecoveryNotAvailable,
-    #[msg("Round has outstanding claims")]
+    #[msg("Cycle has outstanding claims")]
     ClaimsOutstanding,
-    #[msg("Round has already been swept")]
+    #[msg("Cycle has already been swept")]
     AlreadySwept,
-    #[msg("Escrow balance is insufficient")]
-    InsufficientEscrow,
     #[msg("Reward reserve is insufficient")]
     InsufficientReserve,
-    #[msg("Treasury account does not match protocol configuration")]
-    TreasuryMismatch,
     #[msg("No pending admin, or signer is not the pending admin")]
     NotPendingAdmin,
     #[msg("Amount must be greater than zero")]
     ZeroAmount,
-    #[msg("Account does not belong to this round")]
-    RoundMismatch,
-    #[msg("Randomness is available; reveal it instead of recovering")]
+    #[msg("Account does not belong to this cycle")]
+    CycleMismatch,
+    #[msg("Randomness is available; reveal it instead of voiding the cycle")]
     RandomnessAvailable,
+    #[msg("This deployment must be co-signed by the protocol gatekeeper")]
+    GatekeeperRequired,
+    #[msg("A $TUNNEL token account is required to receive a non-zero reward")]
+    TokenAccountRequired,
 }

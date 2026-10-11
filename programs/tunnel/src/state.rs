@@ -3,53 +3,75 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::errors::TunnelError;
 
+/// One rectangular potential barrier. Values are thousandths of the
+/// normalized units in which ħ²/2m = 1 (for an electron: 1 length unit = 1 Å,
+/// 1 energy unit ≈ 3.81 eV).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
-pub struct BarrierParams {
-    /// Probability that one particle tunnels, in basis points (6500 = 65%).
-    pub transmission_bps: u16,
-    /// Reward weight of one successful particle.
-    pub reward_weight: u16,
+pub struct BarrierConfig {
+    /// Barrier height V₀ × 1000.
+    pub height_milli: u32,
+    /// Barrier width a × 1000.
+    pub width_milli: u32,
+    /// Expected reward per energy unit relative to par (10000 = par).
+    pub reward_premium_bps: u16,
+}
+
+/// A particle energy setting a user can choose.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
+pub struct EnergyLevel {
+    /// Particle energy E as a fraction of the barrier height (bps of V₀).
+    pub energy_bps: u16,
+    /// Energy units drawn from the wallet's per-cycle allowance per particle.
+    pub cost: u16,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
 pub struct ProtocolParams {
-    pub barriers: [BarrierParams; BARRIER_COUNT],
-    pub particle_cost_lamports: u64,
-    pub round_duration_secs: u32,
-    pub protocol_fee_bps: u16,
-    pub max_particles_per_position: u16,
+    pub barriers: [BarrierConfig; BARRIER_COUNT],
+    pub levels: [EnergyLevel; ENERGY_LEVELS],
+    /// Free particle-energy allowance per wallet per cycle. Unused energy expires.
+    pub energy_per_cycle: u16,
+    /// $TUNNEL base units paid per energy unit at par odds (before premium and caps).
+    pub reward_per_energy: u64,
+    pub cycle_duration_secs: u32,
     pub randomness_timeout_secs: u32,
-    /// $TUNNEL base units emitted to round 0's epoch.
-    pub initial_emission_per_round: u64,
-    /// Multiplier applied once per epoch (9990 = emission × 0.999 each epoch).
+    /// $TUNNEL base units budgeted for cycle 0's epoch.
+    pub initial_emission_per_cycle: u64,
+    /// Multiplier applied once per epoch (9950 = emission × 0.995 each epoch).
     pub emission_decay_bps: u16,
-    pub emission_epoch_rounds: u32,
+    pub emission_epoch_cycles: u32,
 }
 
 impl ProtocolParams {
     pub fn validate(&self) -> Result<()> {
         for b in self.barriers.iter() {
             require!(
-                (MIN_TRANSMISSION_BPS..=MAX_TRANSMISSION_BPS).contains(&b.transmission_bps),
+                (MIN_HEIGHT_MILLI..=MAX_HEIGHT_MILLI).contains(&b.height_milli),
                 TunnelError::InvalidParams
             );
             require!(
-                (MIN_REWARD_WEIGHT..=MAX_REWARD_WEIGHT).contains(&b.reward_weight),
+                (MIN_WIDTH_MILLI..=MAX_WIDTH_MILLI).contains(&b.width_milli),
+                TunnelError::InvalidParams
+            );
+            require!(
+                (MIN_PREMIUM_BPS..=MAX_PREMIUM_BPS).contains(&b.reward_premium_bps),
                 TunnelError::InvalidParams
             );
         }
+        for l in self.levels.iter() {
+            require!(
+                (MIN_ENERGY_BPS..=MAX_ENERGY_BPS).contains(&l.energy_bps),
+                TunnelError::InvalidParams
+            );
+            require!(l.cost >= 1 && l.cost <= MAX_LEVEL_COST, TunnelError::InvalidParams);
+        }
         require!(
-            self.particle_cost_lamports >= MIN_PARTICLE_COST_LAMPORTS,
+            self.energy_per_cycle >= 1 && self.energy_per_cycle <= MAX_ENERGY_PER_CYCLE,
             TunnelError::InvalidParams
         );
+        require!(self.reward_per_energy > 0, TunnelError::InvalidParams);
         require!(
-            (MIN_ROUND_DURATION_SECS..=MAX_ROUND_DURATION_SECS).contains(&self.round_duration_secs),
-            TunnelError::InvalidParams
-        );
-        require!(self.protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS, TunnelError::InvalidParams);
-        require!(
-            self.max_particles_per_position >= 1
-                && self.max_particles_per_position <= MAX_PARTICLES_PER_POSITION_LIMIT,
+            (MIN_CYCLE_DURATION_SECS..=MAX_CYCLE_DURATION_SECS).contains(&self.cycle_duration_secs),
             TunnelError::InvalidParams
         );
         require!(
@@ -58,9 +80,20 @@ impl ProtocolParams {
             TunnelError::InvalidParams
         );
         require!(self.emission_decay_bps <= MAX_EMISSION_DECAY_BPS, TunnelError::InvalidParams);
-        require!(self.emission_epoch_rounds >= 1, TunnelError::InvalidParams);
+        require!(self.emission_epoch_cycles >= 1, TunnelError::InvalidParams);
         Ok(())
     }
+}
+
+/// Odds and nominal rewards derived by the program from `ProtocolParams`:
+/// the physics model fixes each probability, and each reward is calibrated
+/// to it. Nobody can set these directly.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
+pub struct OddsTable {
+    /// Tunneling probability per [barrier][level], parts per billion.
+    pub transmission_ppb: [[u32; ENERGY_LEVELS]; BARRIER_COUNT],
+    /// Nominal $TUNNEL base units per successful particle, per [barrier][level].
+    pub reward: [[u64; ENERGY_LEVELS]; BARRIER_COUNT],
 }
 
 #[account]
@@ -68,79 +101,82 @@ impl ProtocolParams {
 pub struct Protocol {
     pub admin: Pubkey,
     pub pending_admin: Option<Pubkey>,
-    /// Wallet that receives protocol fees and swept dust.
-    pub treasury: Pubkey,
+    /// When not the default key, every `deploy_particles` must be co-signed by
+    /// this key (an operator rate-limiting service). Disabled by default.
+    pub gatekeeper: Pubkey,
     pub tunnel_mint: Pubkey,
     pub reward_vault: Pubkey,
-    /// Parameters applied to rounds opened from now on. Open rounds keep their snapshot.
+    /// Parameters applied to cycles opened from now on. Open cycles keep their snapshot.
     pub params: ProtocolParams,
+    pub odds: OddsTable,
     pub paused: bool,
-    pub next_round_id: u64,
-    pub last_round_open_ts: i64,
-    pub last_round_close_ts: i64,
-    /// $TUNNEL in the reward vault that is not yet committed to any round.
+    pub next_cycle_id: u64,
+    pub last_cycle_open_ts: i64,
+    pub last_cycle_close_ts: i64,
+    /// $TUNNEL in the reward vault that is not yet committed to any cycle.
     pub reserve_available: u64,
     pub reserve_funded_total: u64,
-    pub total_lamports_committed: u64,
+    pub total_experiments: u64,
     pub total_particles: u64,
+    pub total_energy: u64,
     pub total_successes: u64,
     pub total_tokens_allocated: u64,
-    pub total_fees_lamports: u64,
-    pub rounds_settled: u64,
+    pub total_tokens_claimed: u64,
+    pub cycles_settled: u64,
     pub bump: u8,
     pub reward_vault_bump: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
-pub enum RoundStatus {
-    /// Accepting deposits while `open_ts <= now < close_ts`.
+pub enum CycleStatus {
+    /// Accepting particles while `open_ts <= now < close_ts`.
     /// (UPCOMING / CLOSED are derived from the clock while in this status.)
     Open,
-    /// Deposits closed and the VRF seed fixed from the latest slot hash.
+    /// Deployments closed and the VRF seed fixed from the latest slot hash.
     Closed,
     AwaitingRandomness,
     /// Randomness revealed; positions are being settled.
     Resolving,
     Settled,
-    /// Randomness or close never arrived: every deposit is refundable in full.
-    Failed,
+    /// Randomness never arrived: every particle is void, the budget returns to the reserve.
+    Void,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
-pub enum RoundOutcome {
+pub enum CycleOutcome {
     Pending,
-    /// At least one particle tunnelled: pool split by reward weight.
+    /// At least one particle tunneled.
     Rewards,
-    /// Nobody tunnelled: 95% pool refunded pro rata to commitment.
-    NoSuccessRefund,
-    /// Round failed: 100% refund, no fee.
-    FullRefund,
-    /// Round closed with no participants.
+    /// Every particle was reflected.
+    NoTunnels,
+    /// Randomness timed out; no outcomes exist.
+    Void,
+    /// Cycle closed with no participants.
     Empty,
 }
 
 #[account]
 #[derive(InitSpace)]
-pub struct Round {
+pub struct Cycle {
     pub id: u64,
-    pub status: RoundStatus,
-    pub outcome: RoundOutcome,
+    pub status: CycleStatus,
+    pub outcome: CycleOutcome,
     pub bump: u8,
-    pub vault_bump: u8,
     pub open_ts: i64,
     pub close_ts: i64,
     pub closed_ts: i64,
-    // ---- parameter snapshot, immutable after creation ----
-    pub barriers: [BarrierParams; BARRIER_COUNT],
-    pub particle_cost_lamports: u64,
-    pub protocol_fee_bps: u16,
-    pub max_particles_per_position: u16,
+    // ---- snapshot, immutable after creation ----
+    pub barriers: [BarrierConfig; BARRIER_COUNT],
+    pub levels: [EnergyLevel; ENERGY_LEVELS],
+    pub odds: OddsTable,
+    pub energy_per_cycle: u16,
     pub randomness_timeout_secs: u32,
     pub emission_budget: u64,
-    // ---- deposits ----
-    pub particles: [u64; BARRIER_COUNT],
-    pub total_lamports: u64,
+    // ---- deployments ----
     pub participants: u32,
+    pub experiments: u32,
+    pub particles: [u64; BARRIER_COUNT],
+    pub energy_used: u64,
     // ---- randomness ----
     pub vrf_seed: [u8; 32],
     pub randomness_requested_ts: i64,
@@ -148,54 +184,39 @@ pub struct Round {
     // ---- settlement ----
     pub positions_settled: u32,
     pub successes: [u64; BARRIER_COUNT],
-    pub total_success_weight: u64,
-    pub fee_lamports: u64,
-    pub distributable_lamports: u64,
+    /// Σ successes × nominal reward over every position.
+    pub total_nominal: u64,
+    /// min(total_nominal, emission_budget): what claims can pay in total.
+    pub tokens_allocated: u64,
     pub settled_ts: i64,
     // ---- claims ----
     pub claims: u32,
-    pub lamports_claimed: u64,
     pub tokens_claimed: u64,
     pub swept: bool,
 }
 
-/// Program-owned, always rent-exempt account that accumulates protocol fees
-/// and swept dust. Fees land here (never directly in an external wallet), so
-/// settlement can never be blocked by the treasury wallet's state.
-/// `withdraw_fees` forwards the balance to the configured treasury.
-#[account]
-#[derive(InitSpace)]
-pub struct TreasuryVault {
-    pub bump: u8,
-}
-
-/// Program-owned escrow that holds a round's SOL. Only program instructions
-/// can debit it, and none of them pay out to the admin.
-#[account]
-#[derive(InitSpace)]
-pub struct RoundVault {
-    pub round_id: u64,
-    pub bump: u8,
-}
-
+/// One wallet's particles in one cycle. Created on the first deployment,
+/// closed (rent returned) on claim.
 #[account]
 #[derive(InitSpace)]
 pub struct Position {
     pub owner: Pubkey,
-    pub round_id: u64,
+    pub cycle_id: u64,
     pub bump: u8,
-    pub particles: [u16; BARRIER_COUNT],
-    pub lamports: u64,
+    /// Particles per [barrier][level]. Particle `i` of a cell is drawn with index `i`.
+    pub particles: [[u16; ENERGY_LEVELS]; BARRIER_COUNT],
+    pub energy_used: u16,
+    /// Number of `deploy_particles` calls (experiments) in this position.
+    pub experiments: u16,
     pub settled: bool,
-    pub successes: [u16; BARRIER_COUNT],
-    pub success_weight: u64,
+    pub successes: [[u16; ENERGY_LEVELS]; BARRIER_COUNT],
+    pub nominal_reward: u64,
     pub claimed: bool,
-    pub lamports_paid: u64,
     pub tokens_paid: u64,
 }
 
 impl Position {
     pub fn total_particles(&self) -> u32 {
-        self.particles.iter().map(|&p| p as u32).sum()
+        self.particles.iter().flatten().map(|&p| p as u32).sum()
     }
 }

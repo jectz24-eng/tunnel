@@ -9,63 +9,66 @@ use crate::state::*;
 // ---------------------------------------------------------------- settle one position
 
 #[derive(Accounts)]
-#[instruction(round_id: u64)]
+#[instruction(cycle_id: u64)]
 pub struct SettlePosition<'info> {
-    #[account(mut, seeds = [ROUND_SEED, &round_id.to_le_bytes()], bump = round.bump)]
-    pub round: Account<'info, Round>,
+    #[account(mut, seeds = [CYCLE_SEED, &cycle_id.to_le_bytes()], bump = cycle.bump)]
+    pub cycle: Account<'info, Cycle>,
     #[account(
         mut,
-        seeds = [POSITION_SEED, &round_id.to_le_bytes(), position.owner.as_ref()],
+        seeds = [POSITION_SEED, &cycle_id.to_le_bytes(), position.owner.as_ref()],
         bump = position.bump,
-        constraint = position.round_id == round_id @ TunnelError::RoundMismatch,
+        constraint = position.cycle_id == cycle_id @ TunnelError::CycleMismatch,
     )]
     pub position: Account<'info, Position>,
 }
 
 /// Permissionless and idempotent (a settled position is rejected). Derives
-/// every particle outcome of one position from the revealed randomness.
-/// Settlement is split per position so no transaction ever has to touch all
-/// participants; cost is bounded by `max_particles_per_position`.
-pub fn settle_position(ctx: Context<SettlePosition>, round_id: u64) -> Result<()> {
-    let round = &mut ctx.accounts.round;
+/// every particle outcome of one position from the revealed randomness and
+/// the cycle's snapshotted odds. Settlement is split per position so no
+/// transaction ever has to touch all participants; cost is bounded by the
+/// per-cycle energy allowance.
+pub fn settle_position(ctx: Context<SettlePosition>, cycle_id: u64) -> Result<()> {
+    let cycle = &mut ctx.accounts.cycle;
     let position = &mut ctx.accounts.position;
-    require!(round.status == RoundStatus::Resolving, TunnelError::NotResolving);
+    require!(cycle.status == CycleStatus::Resolving, TunnelError::NotResolving);
     require!(!position.settled, TunnelError::PositionAlreadySettled);
 
-    let mut weight: u64 = 0;
+    let mut nominal: u64 = 0;
     for b in 0..BARRIER_COUNT {
-        let n = position.particles[b];
-        if n == 0 {
-            continue;
+        let mut barrier_successes: u64 = 0;
+        for l in 0..ENERGY_LEVELS {
+            let n = position.particles[b][l];
+            if n == 0 {
+                continue;
+            }
+            let s = math::count_successes(
+                &cycle.randomness,
+                cycle_id,
+                &position.owner,
+                b as u8,
+                l as u8,
+                n,
+                cycle.odds.transmission_ppb[b][l],
+            );
+            position.successes[b][l] = s;
+            barrier_successes += s as u64;
+            nominal = nominal
+                .checked_add((s as u64).checked_mul(cycle.odds.reward[b][l]).ok_or(TunnelError::MathOverflow)?)
+                .ok_or(TunnelError::MathOverflow)?;
         }
-        let s = math::count_successes(
-            &round.randomness,
-            round_id,
-            &position.owner,
-            b as u8,
-            n,
-            round.barriers[b].transmission_bps,
-        );
-        position.successes[b] = s;
-        round.successes[b] = round.successes[b].checked_add(s as u64).ok_or(TunnelError::MathOverflow)?;
-        weight = weight
-            .checked_add((s as u64).checked_mul(round.barriers[b].reward_weight as u64).ok_or(TunnelError::MathOverflow)?)
-            .ok_or(TunnelError::MathOverflow)?;
+        cycle.successes[b] = cycle.successes[b].checked_add(barrier_successes).ok_or(TunnelError::MathOverflow)?;
     }
-    position.success_weight = weight;
+    position.nominal_reward = nominal;
     position.settled = true;
-    round.total_success_weight = round
-        .total_success_weight
-        .checked_add(weight)
-        .ok_or(TunnelError::MathOverflow)?;
-    round.positions_settled = round.positions_settled.checked_add(1).ok_or(TunnelError::MathOverflow)?;
+    cycle.total_nominal = cycle.total_nominal.checked_add(nominal).ok_or(TunnelError::MathOverflow)?;
+    cycle.positions_settled = cycle.positions_settled.checked_add(1).ok_or(TunnelError::MathOverflow)?;
 
     emit!(PositionSettled {
-        round_id,
+        cycle_id,
         owner: position.owner,
         particles: position.particles,
         successes: position.successes,
-        success_weight: weight,
+        nominal_reward: nominal,
     });
     Ok(())
 }
@@ -73,71 +76,54 @@ pub fn settle_position(ctx: Context<SettlePosition>, round_id: u64) -> Result<()
 // ---------------------------------------------------------------- finalize
 
 #[derive(Accounts)]
-#[instruction(round_id: u64)]
-pub struct FinalizeRound<'info> {
+#[instruction(cycle_id: u64)]
+pub struct FinalizeCycle<'info> {
     #[account(mut, seeds = [PROTOCOL_SEED], bump = protocol.bump)]
     pub protocol: Account<'info, Protocol>,
-    #[account(mut, seeds = [ROUND_SEED, &round_id.to_le_bytes()], bump = round.bump)]
-    pub round: Account<'info, Round>,
-    #[account(mut, seeds = [ROUND_VAULT_SEED, &round_id.to_le_bytes()], bump = round.vault_bump)]
-    pub round_vault: Account<'info, RoundVault>,
-    #[account(mut, seeds = [TREASURY_VAULT_SEED], bump = treasury_vault.bump)]
-    pub treasury_vault: Account<'info, TreasuryVault>,
+    #[account(mut, seeds = [CYCLE_SEED, &cycle_id.to_le_bytes()], bump = cycle.bump)]
+    pub cycle: Account<'info, Cycle>,
 }
 
-/// Permissionless once every position is settled. Moves the protocol fee to
-/// the (always rent-exempt) treasury vault and fixes the claimable pool. Runs exactly once: the status
-/// moves to `Settled`, which no instruction can leave.
-pub fn finalize_round(ctx: Context<FinalizeRound>, round_id: u64) -> Result<()> {
+/// Permissionless once every position is settled. Fixes what the cycle pays:
+/// `min(Σ nominal, emission_budget)`. Any unused budget goes straight back to
+/// the reserve. Runs exactly once: `Settled` is terminal.
+pub fn finalize_cycle(ctx: Context<FinalizeCycle>, cycle_id: u64) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    let round = &mut ctx.accounts.round;
-    require!(round.status == RoundStatus::Resolving, TunnelError::NotResolving);
-    require!(round.positions_settled == round.participants, TunnelError::PositionsPending);
+    let cycle = &mut ctx.accounts.cycle;
+    require!(cycle.status == CycleStatus::Resolving, TunnelError::NotResolving);
+    require!(cycle.positions_settled == cycle.participants, TunnelError::PositionsPending);
 
-    let (fee, distributable) = math::split_fee(round.total_lamports, round.protocol_fee_bps)?;
-    let protocol = &mut ctx.accounts.protocol;
-
-    let (outcome, outcome_code, tokens_allocated) = if round.total_success_weight == 0 {
-        // Nobody tunnelled: return the unused emission to the reserve.
-        protocol.reserve_available = protocol
-            .reserve_available
-            .checked_add(round.emission_budget)
-            .ok_or(TunnelError::MathOverflow)?;
-        (RoundOutcome::NoSuccessRefund, 2u8, 0u64)
+    let allocated = cycle.total_nominal.min(cycle.emission_budget);
+    let returned = cycle.emission_budget - allocated;
+    let total_successes: u64 = cycle.successes.iter().sum();
+    let (outcome, code) = if total_successes > 0 {
+        (CycleOutcome::Rewards, 1u8)
     } else {
-        (RoundOutcome::Rewards, 1u8, round.emission_budget)
+        (CycleOutcome::NoTunnels, 2u8)
     };
 
-    if fee > 0 {
-        ctx.accounts.round_vault.sub_lamports(fee)?;
-        ctx.accounts.treasury_vault.add_lamports(fee)?;
-    }
-
-    round.fee_lamports = fee;
-    round.distributable_lamports = distributable;
-    round.outcome = outcome;
-    round.status = RoundStatus::Settled;
-    round.settled_ts = now;
-
-    let total_successes: u64 = round.successes.iter().sum();
+    let protocol = &mut ctx.accounts.protocol;
+    protocol.reserve_available = protocol.reserve_available.checked_add(returned).ok_or(TunnelError::MathOverflow)?;
     protocol.total_successes = protocol.total_successes.checked_add(total_successes).ok_or(TunnelError::MathOverflow)?;
     protocol.total_tokens_allocated = protocol
         .total_tokens_allocated
-        .checked_add(tokens_allocated)
+        .checked_add(allocated)
         .ok_or(TunnelError::MathOverflow)?;
-    protocol.total_fees_lamports = protocol.total_fees_lamports.checked_add(fee).ok_or(TunnelError::MathOverflow)?;
-    protocol.rounds_settled = protocol.rounds_settled.saturating_add(1);
+    protocol.cycles_settled = protocol.cycles_settled.saturating_add(1);
 
-    emit!(RoundFinalized {
-        round_id,
-        outcome: outcome_code,
-        total_lamports: round.total_lamports,
-        fee_lamports: fee,
-        distributable_lamports: distributable,
-        successes: round.successes,
-        total_success_weight: round.total_success_weight,
-        emission_budget: round.emission_budget,
-        tokens_allocated,
+    cycle.tokens_allocated = allocated;
+    cycle.outcome = outcome;
+    cycle.status = CycleStatus::Settled;
+    cycle.settled_ts = now;
+
+    emit!(CycleFinalized {
+        cycle_id,
+        outcome: code,
+        successes: cycle.successes,
+        total_nominal: cycle.total_nominal,
+        emission_budget: cycle.emission_budget,
+        tokens_allocated: allocated,
+        returned_to_reserve: returned,
     });
     Ok(())
 }
