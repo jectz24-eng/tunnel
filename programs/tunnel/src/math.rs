@@ -210,20 +210,18 @@ mod tests {
 
     #[test]
     fn known_vector() {
-        // Cross-checked by packages/sdk/test/math.test.ts ("matches the Rust known vector").
+        // Cross-checked by packages/sdk/test/math.test.ts and an independent Python hashlib computation.
         let r = [1u8; 64];
         let owner = Pubkey::new_from_array([2u8; 32]);
         let d = particle_draw(&r, 7, &owner, 1, 2, 3);
-        println!("KNOWN_VECTOR {d}");
         assert_eq!(d, KNOWN_DRAW);
     }
-    const KNOWN_DRAW: u64 = 0;
+    const KNOWN_DRAW: u64 = 5_097_536_720_253_246_649;
 
     #[test]
     fn odds_follow_physics_and_rewards_are_calibrated() {
         let p = params();
         let odds = derive_odds(&p).unwrap();
-        println!("ODDS {:?}", odds);
         for b in 0..BARRIER_COUNT {
             for l in 1..ENERGY_LEVELS {
                 // More energy → higher probability; higher barrier → lower probability.
