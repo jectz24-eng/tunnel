@@ -4,6 +4,13 @@ import { BARRIER_META, LEVEL_LABELS, atLeastOneProbability, expectedReward, form
 import { play } from "@/lib/sound";
 import { cx } from "../ui";
 
+/** Never rounds a near-certainty up to 100% (or a long shot down to 0%). */
+function pctAtLeastOne(p: number) {
+  if (p > 0.999) return "> 99.9%";
+  if (p < 0.001) return "< 0.1%";
+  return `${(p * 100).toFixed(1)}%`;
+}
+
 export interface Config {
   barrier: number;
   level: number;
@@ -180,7 +187,7 @@ export function ConfigPanel({
       <dl className="grid grid-cols-2 gap-px bg-line-soft">
         {[
           ["Tunneling probability", formatPpb(ppb), "per particle", meta.color],
-          ["≥ 1 tunnels", n ? `${(atLeastOneProbability(ppb, n) * 100).toFixed(n > 1 ? 1 : 2)}%` : "—", n ? `${n} independent draw${n === 1 ? "" : "s"}` : "no energy left this cycle"],
+          ["≥ 1 tunnels", n ? pctAtLeastOne(atLeastOneProbability(ppb, n)) : "—", n ? `${n} independent draw${n === 1 ? "" : "s"}` : "no energy left this cycle"],
           ["Reward per success", `${formatTunnel(reward)}`, "$TUNNEL, before cycle cap"],
           ["Expected reward", n ? `${formatTunnel(expectedReward(odds, b, l, n))}` : "—", n ? `potential up to ${formatTunnel(reward * BigInt(n), 1)}` : "refills next cycle"],
         ].map(([k, v, sub, c]) => (

@@ -101,7 +101,6 @@ function Scene({ apiRef, onPhase, reducedMotion, particles = 120, barrierColor =
     return list;
   }, []);
   const archGeo = useMemo(() => new THREE.TorusGeometry(TUBE_R, 0.022, 8, 96), []);
-  const archFrameGeo = useMemo(() => new THREE.TorusGeometry(TUBE_R + 0.07, 0.026, 6, 64), []);
   const frameMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#0f1824", metalness: 0.9, roughness: 0.35, emissive: "#050b16", emissiveIntensity: 0.5 }), []);
 
   const barrierMat = useMemo(
@@ -208,10 +207,10 @@ function Scene({ apiRef, onPhase, reducedMotion, particles = 120, barrierColor =
   useEffect(
     () => () => {
       arches.forEach((a) => a.mat.dispose());
-      [archGeo, archFrameGeo, pts, waveGeo, dust].forEach((g) => g.dispose());
+      [archGeo, pts, waveGeo, dust].forEach((g) => g.dispose());
       [frameMat, barrierMat, shockMat, sourceGlowMat, detectorMat, pointsMat, waveMat, dustMat].forEach((m) => m.dispose());
     },
-    [arches, archGeo, archFrameGeo, pts, waveGeo, dust, frameMat, barrierMat, shockMat, sourceGlowMat, detectorMat, pointsMat, waveMat, dustMat],
+    [arches, archGeo, pts, waveGeo, dust, frameMat, barrierMat, shockMat, sourceGlowMat, detectorMat, pointsMat, waveMat, dustMat],
   );
 
   // ---------------------------------------------------------------- API
@@ -336,6 +335,12 @@ function Scene({ apiRef, onPhase, reducedMotion, particles = 120, barrierColor =
       if (el < tC) {
         charge.current = Math.min(1, el / tC);
         put(0, 0, SOURCE_Z, sh.color, 1.5 + charge.current * 3, 0.6 + charge.current * 0.4);
+        // energy gathering into the source
+        for (let j = 0; j < 14; j++) {
+          const th = j * 0.45 + el * 6;
+          const r = 1.4 * (1 - charge.current) + 0.15;
+          put(Math.cos(th) * r, Math.sin(th) * r, SOURCE_Z + Math.sin(j) * 0.2, col("#00D9FF"), 1.1, 0.35 + charge.current * 0.5);
+        }
         target = SOURCE_Z;
       } else if (el < tA) {
         if (sh.phase !== "accelerating") emit("accelerating");
@@ -421,10 +426,10 @@ function Scene({ apiRef, onPhase, reducedMotion, particles = 120, barrierColor =
     if (sh && t - sh.t0 > 0.2) {
       const el = t - sh.t0;
       if (el < DUR.charge) {
-        camPos.set(2.6, 1.3, SOURCE_Z + 4.2);
+        camPos.set(3.2, 1.5, SOURCE_Z + 5.4);
         camLook.set(0, 0, SOURCE_Z - 2);
       } else {
-        camPos.set(narrow ? 1.6 : 1.1, 0.75, target + 4.6);
+        camPos.set(narrow ? 0.9 : 0.7, 0.55, target + 4.6);
         camLook.set(0, 0, target - 7);
       }
     } else {
@@ -453,7 +458,6 @@ function Scene({ apiRef, onPhase, reducedMotion, particles = 120, barrierColor =
       {arches.map((a, i) => (
         <group key={i} position={[0, 0, a.z]}>
           <mesh geometry={archGeo} material={a.mat} />
-          <mesh geometry={archFrameGeo} material={frameMat} />
         </group>
       ))}
       {[-1, 1].map((s) => (
@@ -465,7 +469,7 @@ function Scene({ apiRef, onPhase, reducedMotion, particles = 120, barrierColor =
       {/* particle source */}
       <group position={[0, 0, SOURCE_Z]}>
         <mesh ref={sourceRef}>
-          <sphereGeometry args={[0.16, 32, 16]} />
+          <sphereGeometry args={[0.07, 24, 12]} />
           <meshBasicMaterial color="#EAFBFF" />
         </mesh>
         {[0.55, 0.75, 0.95].map((r, i) => (

@@ -55,7 +55,26 @@ export function ClaimsPanel({ onReplay }: { onReplay?: (cycleId: bigint) => void
 
   if (!publicKey) return <Empty title="Connect a wallet to see your claims">Rewards and refundable deposits from settled cycles appear here.</Empty>;
   if (positions.loading && !positions.data) return <Empty title="Reading your positions from chain…" />;
-  if (!rows.length) return <Empty title="Nothing to claim">You have no open positions. Deploy particles in the current cycle to start an experiment.</Empty>;
+
+  const banner =
+    state.phase === "confirmed" && state.signature ? (
+      <div className="border-b border-line-soft px-5 py-2.5 text-xs text-cyan">
+        Claimed ·{" "}
+        <a className="underline" href={explorerTx(state.signature)} target="_blank" rel="noreferrer">
+          view transaction
+        </a>
+      </div>
+    ) : state.phase === "failed" ? (
+      <div className="border-b border-red/20 bg-red/[0.06] px-5 py-2.5 text-xs text-red">{state.error}</div>
+    ) : null;
+
+  if (!rows.length)
+    return (
+      <>
+        {banner}
+        <Empty title="Nothing to claim">You have no open positions. Deploy particles in the current cycle to start an experiment.</Empty>
+      </>
+    );
 
   return (
     <div>
@@ -70,15 +89,7 @@ export function ClaimsPanel({ onReplay }: { onReplay?: (cycleId: bigint) => void
           {state.phase === "signing" ? "Approve in wallet…" : state.phase === "confirming" || state.phase === "sending" ? "Confirming…" : `Claim all (${claimable.length})`}
         </Button>
       </div>
-      {state.phase === "failed" && <div className="border-b border-red/20 bg-red/[0.06] px-5 py-2.5 text-xs text-red">{state.error}</div>}
-      {state.phase === "confirmed" && state.signature && (
-        <div className="border-b border-line-soft px-5 py-2.5 text-xs text-cyan">
-          Claimed ·{" "}
-          <a className="underline" href={explorerTx(state.signature)} target="_blank" rel="noreferrer">
-            view transaction
-          </a>
-        </div>
-      )}
+      {banner}
       <ul className="divide-y divide-line-soft">
         {rows.map(({ p, c, payout }) => {
           const tunneled = p.successes.flat().reduce((a, b) => a + b, 0);

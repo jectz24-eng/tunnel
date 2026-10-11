@@ -106,6 +106,7 @@ export function AcceleratorApp() {
       if (!plan || !chamber.current) return;
       setRevealing(true);
       setResult(null);
+      document.getElementById("chamber")?.scrollIntoView({ behavior: "smooth", block: "center" });
       chamber.current.setQueued(0);
       setProgress({ done: 0, tunneled: 0, total: plan.total });
       const lead = plan.particles[0];
@@ -200,7 +201,7 @@ export function AcceleratorApp() {
     <div className="mx-auto max-w-[1600px] px-3 pb-10 pt-4 sm:px-6">
       <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[350px_minmax(0,1fr)_320px]">
         {/* chamber */}
-        <section className="panel brackets relative order-1 min-h-[360px] overflow-hidden sm:min-h-[460px] lg:order-2 lg:min-h-[640px]" aria-label="Particle acceleration chamber">
+        <section id="chamber" className="panel brackets relative order-1 min-h-[360px] overflow-hidden sm:min-h-[460px] lg:order-2 lg:min-h-[640px]" aria-label="Particle acceleration chamber">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_50%_45%,#0B1424_0%,#05070B_75%)]" />
           {q.webgl ? (
             <Chamber apiRef={chamber} onPhase={onPhase} dpr={q.dpr} reducedMotion={q.reducedMotion} particles={particleBudget(q.tier, 160)} barrierColor={barrierColor} className="absolute inset-0" />
