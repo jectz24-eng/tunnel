@@ -313,3 +313,12 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+@keyframes hero-scroll-dot {
+  0% { transform: translateY(-100%); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(300%); opacity: 0; }
+}
+.hero-scroll-dot {
+  animation: hero-scroll-dot 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}

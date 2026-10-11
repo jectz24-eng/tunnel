@@ -28,7 +28,25 @@ export interface RingProps {
   className?: string;
   /** Camera framing preset. */
   framing?: "hero" | "panel";
+  /**
+   * Labels pinned to points of the scene. Each frame the anchor is projected
+   * to the screen and the matching element (by id) is moved there, faded by
+   * its scroll window. Updated imperatively, so React never re-renders.
+   */
+  annotations?: Annotation[];
+  annotationRefs?: MutableRefObject<Record<string, HTMLElement | null>>;
 }
+
+export interface Annotation {
+  id: string;
+  anchor: AnchorName;
+  /** Scroll progress range [in, out] in which the label is visible. */
+  window: [number, number];
+  /** Which side the label card opens to; "auto" picks the side facing the screen centre. */
+  side?: "auto" | "left" | "right";
+}
+
+export type AnchorName = "ring" | "magnets" | "core" | "conduits" | "barrier" | "width" | "pylon" | "transmission";
 
 const R = 4.2;
 const BARRIER_THETA = Math.PI * 0.36;
@@ -83,7 +101,28 @@ function makePool(n: number): Pool {
   };
 }
 
-function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framing = "hero" }: RingProps) {
+const smooth = (x: number) => x * x * (3 - 2 * x);
+
+/** Hero camera path: [progress, position, look-at target]. */
+function heroKeyframes(barrier: THREE.Vector3, wide: boolean, narrow: boolean) {
+  const tangent = new THREE.Vector3(-Math.sin(BARRIER_THETA), 0, Math.cos(BARRIER_THETA));
+  const radial = new THREE.Vector3(Math.cos(BARRIER_THETA), 0, Math.sin(BARRIER_THETA));
+  const k = narrow ? 1.35 : 1;
+  const up = (v: THREE.Vector3, y: number) => v.clone().setY(y);
+  return [
+    { p: 0, pos: narrow ? new THREE.Vector3(0, 6.5, 15.5) : new THREE.Vector3(-0.5, 4.4, 14.2), target: wide ? new THREE.Vector3(-3.4, -1.0, 0.6) : new THREE.Vector3(0, -0.6, 0) },
+    // high overview of the whole machine
+    { p: 0.28, pos: new THREE.Vector3(-6.2 * k, 7.6 * k, 8.4 * k), target: new THREE.Vector3(0.2, -0.4, 0.4) },
+    // side view of the barrier: the beam visibly passes through its width
+    { p: 0.52, pos: up(barrier.clone().addScaledVector(radial, 4.6 * k).addScaledVector(tangent, 2.2 * k), 1.5 * k), target: barrier.clone().addScaledVector(radial, -0.4) },
+    // down the beam line, facing the barrier
+    { p: 0.74, pos: up(barrier.clone().addScaledVector(tangent, -4.2 * k).addScaledVector(radial, 0.9), 0.75), target: barrier.clone().addScaledVector(tangent, 1.5) },
+    // into the wall: the frame fills with the plasma field, then the page takes over
+    { p: 0.86, pos: up(barrier.clone().addScaledVector(tangent, -0.75), 0.35), target: barrier.clone().addScaledVector(tangent, 3).setY(0.35) },
+  ];
+}
+
+function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framing = "hero", annotations, annotationRefs }: RingProps) {
   const { gl, camera, pointer, size } = useThree();
   const pr = gl.getPixelRatio();
   const pool = useMemo(() => makePool(particles), [particles]);
@@ -309,6 +348,28 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
   const coreRef = useRef<THREE.Mesh>(null);
   const dustRef = useRef<THREE.Points>(null);
   const narrow = size.width < 640;
+  const smoothed = useRef(0);
+  const keyframes = useMemo(() => heroKeyframes(barrierPos, size.width >= 1024, size.width < 640), [size.width]);
+  const wantPos = useMemo(() => new THREE.Vector3(), []);
+  const wantTarget = useMemo(() => new THREE.Vector3(), []);
+  const curTarget = useRef<THREE.Vector3 | null>(null);
+  const proj = useMemo(() => new THREE.Vector3(), []);
+  const anchors = useMemo(() => {
+    const onRing = (th: number, y = 0.12, r = R) => new THREE.Vector3(Math.cos(th) * r, y, Math.sin(th) * r);
+    const radial = new THREE.Vector3(Math.cos(BARRIER_THETA), 0, Math.sin(BARRIER_THETA));
+    const conduit = 0.3 + (Math.PI * 2) / 6;
+    return {
+      ring: onRing(Math.PI * 1.08, 0.08),
+      magnets: onRing(Math.PI * 0.78, 0.2),
+      core: new THREE.Vector3(0, 0.1, 0),
+      conduits: new THREE.Vector3(Math.cos(conduit) * R * 0.55, 0, Math.sin(conduit) * R * 0.55),
+      barrier: barrierPos.clone().setY(1.0),
+      width: barrierPos.clone().setY(-0.9),
+      pylon: barrierPos.clone().addScaledVector(radial, 0.78).setY(0.6),
+      transmission: onRing(BARRIER_THETA + 0.42, 0.1),
+    } satisfies Record<AnchorName, THREE.Vector3>;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useFrame((state, rawDt) => {
     const dt = reducedMotion ? 0 : Math.min(rawDt, 1 / 30);
@@ -317,20 +378,60 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
     ringMat.uniforms.uTime.value = t;
     barrierMat.uniforms.uTime.value = t;
 
-    // Camera: base framing, pointer parallax, scroll-driven approach toward the barrier.
-    const s = scrollRef?.current ?? 0;
-    const base = framing === "hero" ? (narrow ? new THREE.Vector3(0, 6.5, 15.5) : new THREE.Vector3(-0.5, 4.4, 14.2)) : new THREE.Vector3(0, 5.2, 12.5);
-    const near = new THREE.Vector3(barrierPos.x * 1.85 + 1.2, 1.1, barrierPos.z * 1.85 + 1.5);
-    tmp.copy(base).lerp(near, s * 0.85);
-    tmp.x += pointer.x * 0.7 * (1 - s);
-    tmp.y += pointer.y * 0.45 * (1 - s);
-    camera.position.lerp(tmp, reducedMotion ? 1 : 0.06);
-    // Wide screens: frame the ring up and to the right, leaving room for the headline.
-    if (framing === "hero" && size.width >= 1024) camTarget.set(-3.4, -1.0, 0.6);
-    else if (framing === "hero") camTarget.set(0, -0.6, 0);
-    else camTarget.set(0, 0, 0);
-    camTarget.lerp(barrierPos, s);
+    // Camera. Scroll progress is damped (frame-rate independent) so wheel steps
+    // become one continuous glide, then mapped onto the keyframed path.
+    const frameDt = Math.min(rawDt, 1 / 20);
+    const raw = scrollRef?.current ?? 0;
+    smoothed.current = reducedMotion ? raw : smoothed.current + (raw - smoothed.current) * (1 - Math.exp(-frameDt * 4.5));
+    const s = smoothed.current;
+    if (framing === "hero") {
+      let i = 0;
+      while (i < keyframes.length - 2 && s > keyframes[i + 1].p) i++;
+      const a = keyframes[i];
+      const b = keyframes[i + 1];
+      const u = smooth(Math.min(1, Math.max(0, (s - a.p) / (b.p - a.p))));
+      wantPos.copy(a.pos).lerp(b.pos, u);
+      wantTarget.copy(a.target).lerp(b.target, u);
+      const sway = 1 - Math.min(1, s * 1.6);
+      wantPos.x += pointer.x * 0.7 * sway;
+      wantPos.y += pointer.y * 0.45 * sway;
+    } else {
+      wantPos.set(pointer.x * 0.5, 5.2 + pointer.y * 0.3, 12.5);
+      wantTarget.set(0, 0, 0);
+    }
+    const follow = reducedMotion ? 1 : 1 - Math.exp(-frameDt * 6);
+    camera.position.lerp(wantPos, follow);
+    if (!curTarget.current) curTarget.current = wantTarget.clone();
+    curTarget.current.lerp(wantTarget, follow);
+    camTarget.copy(curTarget.current);
     camera.lookAt(camTarget);
+
+    // Pinned labels: project each anchor and move its element there.
+    if (annotations && annotationRefs) {
+      const w = size.width;
+      const h = size.height;
+      for (const an of annotations) {
+        const el = annotationRefs.current[an.id];
+        if (!el) continue;
+        const [i0, i1] = an.window;
+        const fade = Math.min(smooth(Math.min(1, Math.max(0, (s - i0) / 0.06))), smooth(Math.min(1, Math.max(0, (i1 - s) / 0.06))));
+        proj.copy(anchors[an.anchor]).project(camera);
+        const visible = proj.z < 1 && Math.abs(proj.x) < 0.95 && Math.abs(proj.y) < 0.92;
+        const x = (proj.x * 0.5 + 0.5) * w;
+        const y = (-proj.y * 0.5 + 0.5) * h;
+        const o = visible ? fade : 0;
+        el.style.opacity = o.toFixed(3);
+        el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+        el.style.visibility = o > 0.01 ? "visible" : "hidden";
+        // Preferred side, flipped if the card would leave the screen.
+        let side = an.side && an.side !== "auto" ? an.side : x > w * 0.5 ? "left" : "right";
+        const card = (el.lastElementChild as HTMLElement | null)?.offsetWidth ?? 0;
+        const reach = card + (w < 640 ? 56 : 72) + 8;
+        const fits = (sd: string) => (sd === "left" ? x - reach >= 0 : x + reach <= w);
+        if (!fits(side)) side = fits(side === "left" ? "right" : "left") ? (side === "left" ? "right" : "left") : x > w / 2 ? "left" : "right";
+        el.dataset.side = side;
+      }
+    }
 
     // Rotating magnetic structures.
     if (markRef.current) markRef.current.rotation.z += dt * 0.03;
