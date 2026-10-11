@@ -1,9 +1,9 @@
 /**
- * Permissionless round crank. Opens rounds on schedule and drives every round
+ * Permissionless cycle crank. Opens cycles on schedule and drives every cycle
  * through close → request → reveal → settle → finalize → sweep. Anyone can run
  * this (it only calls permissionless instructions); the program validates
- * every step, so the crank has no power over outcomes or funds. Its key only
- * pays rent for new rounds and ORAO request fees.
+ * every step, so the crank has no power over outcomes or rewards. Its key only
+ * pays rent for new cycles and ORAO request fees.
  */
 import {
   ComputeBudgetProgram,
@@ -17,22 +17,31 @@ import {
 import type { PrismaClient } from "@tunnel/db";
 import {
   TunnelInstructions,
+  fetchCyclePositions,
+  fetchCycles,
   fetchOraoRandomness,
   fetchOraoTreasury,
   fetchProtocol,
-  fetchRoundPositions,
-  fetchRounds,
-  treasuryVaultPda,
-  type RoundAccount,
+  type CycleAccount,
 } from "@tunnel/sdk";
 import { log } from "./log";
-import { planRoundAction, shouldOpenRound, type RoundAction } from "./planner";
+import { planCycleAction, shouldOpenCycle, type CycleAction } from "./planner";
 import { anchorErrorName, withRetry } from "./retry";
+
+/** Races with other crankers are expected and harmless: the step already happened. */
+export const BENIGN_ERRORS = [
+  "CycleNotOpen",
+  "CycleNotClosed",
+  "NotAwaitingRandomness",
+  "PositionAlreadySettled",
+  "NotResolving",
+  "AlreadySwept",
+  "CycleScheduleConflict",
+];
 
 export class Crank {
   private readonly ix: TunnelInstructions;
   private oraoTreasury: PublicKey | null = null;
-  private ticks = 0;
   lastTickAt = 0;
   lastError: string | null = null;
 
@@ -61,52 +70,45 @@ export class Crank {
     }
     const now = await this.chainNow();
 
-    if (shouldOpenRound(protocol, now)) {
-      await this.send("open", protocol.nextRoundId, [this.ix.openRound(this.keeper.publicKey, protocol.nextRoundId)]);
+    if (shouldOpenCycle(protocol, now)) {
+      await this.send("open", protocol.nextCycleId, [this.ix.openCycle(this.keeper.publicKey, protocol.nextCycleId)]);
     }
 
     const ids: bigint[] = [];
-    for (let i = protocol.nextRoundId - BigInt(this.scanWindow); i < protocol.nextRoundId; i++) if (i >= 0n) ids.push(i);
-    const rounds = (await fetchRounds(this.connection, ids, this.ix.programId)).filter((r): r is RoundAccount => !!r);
+    for (let i = protocol.nextCycleId - BigInt(this.scanWindow); i < protocol.nextCycleId; i++) if (i >= 0n) ids.push(i);
+    const cycles = (await fetchCycles(this.connection, ids, this.ix.programId)).filter((c): c is CycleAccount => !!c);
 
-    for (const round of rounds) {
-      if ((round.status === "settled" || round.status === "failed") && (round.swept || round.claims < round.participants)) continue;
+    for (const cycle of cycles) {
+      if ((cycle.status === "settled" || cycle.status === "void") && (cycle.swept || cycle.claims < cycle.participants)) continue;
       let randomnessFulfilled: boolean | undefined;
       let unsettledOwners: string[] | undefined;
-      if (round.status === "closed" || round.status === "awaitingRandomness") {
-        randomnessFulfilled = (await fetchOraoRandomness(this.connection, round.vrfSeed)).fulfilled;
+      if (cycle.status === "closed" || cycle.status === "awaitingRandomness") {
+        randomnessFulfilled = (await fetchOraoRandomness(this.connection, cycle.vrfSeed)).fulfilled;
       }
-      if (round.status === "resolving") {
-        const positions = await fetchRoundPositions(this.connection, round.id, this.ix.programId);
+      if (cycle.status === "resolving") {
+        const positions = await fetchCyclePositions(this.connection, cycle.id, this.ix.programId);
         unsettledOwners = positions.filter((p) => !p.settled).map((p) => p.owner.toBase58());
       }
-      const action = planRoundAction({ round, now, randomnessFulfilled, unsettledOwners });
-      await this.execute(round, action);
-    }
-
-    // Forward accumulated fees to the treasury once they exceed the threshold.
-    if (++this.ticks % 150 === 0) {
-      const vault = await this.connection.getBalance(treasuryVaultPda(this.ix.programId));
-      if (vault > 100_000_000) await this.send("withdraw_fees", 0n, [this.ix.withdrawFees(protocol.treasury)]);
+      await this.execute(cycle, planCycleAction({ cycle, now, randomnessFulfilled, unsettledOwners }));
     }
     this.lastTickAt = Date.now();
     this.lastError = null;
   }
 
-  private async execute(round: RoundAccount, action: RoundAction) {
-    const id = round.id;
+  private async execute(cycle: CycleAccount, action: CycleAction) {
+    const id = cycle.id;
     switch (action.kind) {
       case "close":
-        return this.send("close", id, [this.ix.closeRound(id)]);
+        return this.send("close", id, [this.ix.closeCycle(id)]);
       case "request":
         this.oraoTreasury ??= await fetchOraoTreasury(this.connection);
         return this.send("request", id, [
-          this.ix.requestRandomness({ cranker: this.keeper.publicKey, roundId: id, vrfSeed: round.vrfSeed, vrfTreasury: this.oraoTreasury }),
+          this.ix.requestRandomness({ cranker: this.keeper.publicKey, cycleId: id, vrfSeed: cycle.vrfSeed, vrfTreasury: this.oraoTreasury }),
         ]);
       case "reveal":
-        return this.send("reveal", id, [this.ix.revealRandomness(id, round.vrfSeed)]);
-      case "recover":
-        return this.send("recover", id, [this.ix.recoverRound(id, round.vrfSeed)]);
+        return this.send("reveal", id, [this.ix.revealRandomness(id, cycle.vrfSeed)]);
+      case "void":
+        return this.send("void", id, [this.ix.voidCycle(id, cycle.vrfSeed)]);
       case "settle": {
         for (let i = 0; i < action.owners.length; i += this.settleBatch) {
           const batch = action.owners.slice(i, i + this.settleBatch);
@@ -120,15 +122,15 @@ export class Crank {
         return;
       }
       case "finalize":
-        return this.send("finalize", id, [this.ix.finalizeRound(id)]);
+        return this.send("finalize", id, [this.ix.finalizeCycle(id)]);
       case "sweep":
-        return this.send("sweep", id, [this.ix.sweepRound(id)]);
+        return this.send("sweep", id, [this.ix.sweepCycle(id)]);
       default:
         return;
     }
   }
 
-  private async send(kind: string, roundId: bigint, ixs: TransactionInstruction[], target?: string) {
+  private async send(kind: string, cycleId: bigint, ixs: TransactionInstruction[], target?: string) {
     let attempts = 0;
     try {
       const sig = await withRetry(
@@ -136,22 +138,20 @@ export class Crank {
           attempts = a;
           return sendAndConfirmTransaction(this.connection, new Transaction().add(...ixs), [this.keeper], { commitment: "confirmed" });
         },
-        { onRetry: (e, a, d) => log.warn({ kind, roundId: String(roundId), attempt: a, delayMs: d, err: String(e) }, "retrying crank tx") },
+        { onRetry: (e, a, d) => log.warn({ kind, cycleId: String(cycleId), attempt: a, delayMs: d, err: String(e) }, "retrying crank tx") },
       );
-      log.info({ kind, roundId: String(roundId), sig }, "crank");
-      await this.record({ kind, roundId, target, signature: sig, status: "ok", attempts });
+      log.info({ kind, cycleId: String(cycleId), sig }, "crank");
+      await this.record({ kind, cycleId, target, signature: sig, status: "ok", attempts });
     } catch (e) {
       const name = anchorErrorName(e);
-      // Races with other crankers are expected and harmless: the step already happened.
-      const benign = ["RoundNotOpen", "RoundNotClosed", "NotAwaitingRandomness", "PositionAlreadySettled", "NotResolving", "AlreadySwept", "RoundScheduleConflict"];
-      const level = name && benign.includes(name) ? "debug" : "error";
-      log[level]({ kind, roundId: String(roundId), err: name ?? String(e) }, "crank tx failed");
-      if (level === "error") this.lastError = `${kind} #${roundId}: ${name ?? String(e)}`;
-      await this.record({ kind, roundId, target, status: name && benign.includes(name) ? "skipped" : "failed", error: name ?? String(e).slice(0, 500), attempts });
+      const benign = !!name && BENIGN_ERRORS.includes(name);
+      log[benign ? "debug" : "error"]({ kind, cycleId: String(cycleId), err: name ?? String(e) }, "crank tx failed");
+      if (!benign) this.lastError = `${kind} #${cycleId}: ${name ?? String(e)}`;
+      await this.record({ kind, cycleId, target, status: benign ? "skipped" : "failed", error: name ?? String(e).slice(0, 500), attempts });
     }
   }
 
-  private async record(row: { kind: string; roundId: bigint; target?: string; signature?: string; status: string; error?: string; attempts: number }) {
+  private async record(row: { kind: string; cycleId: bigint; target?: string; signature?: string; status: string; error?: string; attempts: number }) {
     if (!this.db) return;
     await this.db.keeperAction.create({ data: row }).catch(() => undefined);
   }

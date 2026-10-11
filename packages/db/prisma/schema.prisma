@@ -1,8 +1,13 @@
 // TUNNEL indexer database.
 //
 // Everything here is a *derived* view of onchain state. The chain is the only
-// authority over funds and rewards; the keeper reconciles these tables against
-// program accounts, and claimable balances are always re-read from chain.
+// authority over outcomes and rewards; the keeper reconciles these tables
+// against program accounts, and claimable balances are always re-read from
+// chain before a claim.
+//
+// Spec mapping: Users → User · MiningCycles → Cycle · MiningAttempts → Experiment
+// · Rewards → Position (+ Claim) · ProtocolConfiguration → ProtocolState
+// · ProtocolEvents → IndexedEvent.
 
 generator client {
   provider = "prisma-client"
@@ -15,106 +20,143 @@ datasource db {
 
 /// Every decoded program event, exactly once (idempotent on signature + index).
 model IndexedEvent {
-  id          BigInt   @id @default(autoincrement())
+  id          BigInt    @id @default(autoincrement())
   signature   String
   eventIndex  Int
   slot        BigInt
   blockTime   DateTime?
   name        String
-  roundId     BigInt?
+  cycleId     BigInt?
   owner       String?
   data        Json
   /// "confirmed" when first seen, upgraded to "finalized" by the reconciler.
-  commitment  String   @default("confirmed")
-  createdAt   DateTime @default(now())
+  commitment  String    @default("confirmed")
+  createdAt   DateTime  @default(now())
 
   @@unique([signature, eventIndex])
   @@index([name, id])
-  @@index([roundId])
+  @@index([cycleId])
   @@index([owner])
 }
 
-model Round {
-  id                    BigInt    @id
-  status                String
-  outcome               String
-  openTs                DateTime
-  closeTs               DateTime
-  barrierBps            Int[]
-  barrierWeights        Int[]
-  particleCostLamports  BigInt
-  protocolFeeBps        Int
-  emissionBudget        BigInt
-  particles             BigInt[]
-  totalLamports         BigInt
-  participants          Int
-  vrfSeed               String?
-  randomness            String?
-  successes             BigInt[]
-  totalSuccessWeight    BigInt
-  feeLamports           BigInt
-  distributableLamports BigInt
-  tokensAllocated       BigInt    @default(0)
-  claims                Int
-  settledAt             DateTime?
-  swept                 Boolean   @default(false)
-  reconciledSlot        BigInt    @default(0)
-  updatedAt             DateTime  @updatedAt
+/// A wallet that has interacted with the protocol (from events or sign-in).
+model User {
+  wallet         String   @id
+  firstSeenAt    DateTime @default(now())
+  lastActivityAt DateTime @default(now())
+
+  @@index([lastActivityAt])
+}
+
+model Cycle {
+  id              BigInt    @id
+  address         String
+  status          String
+  outcome         String
+  openTs          DateTime
+  closeTs         DateTime
+  energyPerCycle  Int
+  /// Snapshotted barrier configs and energy levels (JSON, from the Cycle account).
+  barriers        Json
+  levels          Json
+  /// Snapshotted odds: { transmissionPpb: number[][], reward: string[][] }.
+  odds            Json
+  emissionBudget  BigInt
+  participants    Int
+  experiments     Int
+  particles       BigInt[]
+  energyUsed      BigInt
+  vrfSeed         String?
+  randomness      String?
+  successes       BigInt[]
+  totalNominal    BigInt
+  tokensAllocated BigInt
+  claims          Int
+  tokensClaimed   BigInt
+  settledAt       DateTime?
+  swept           Boolean   @default(false)
+  reconciledSlot  BigInt    @default(0)
+  updatedAt       DateTime  @updatedAt
 
   positions Position[]
 
   @@index([status])
+  @@index([openTs])
 }
 
+/// One wallet's participation in one cycle (the onchain Position account).
 model Position {
-  roundId        BigInt
-  owner          String
-  address        String   @unique
-  particles      Int[]
-  lamports       BigInt
-  settled        Boolean
-  successes      Int[]
-  successWeight  BigInt
-  claimed        Boolean
-  lamportsPaid   BigInt
-  tokensPaid     BigInt
-  /// Expected payout computed with the SDK mirror of the program math (null until settled).
-  expectedLamports BigInt?
-  expectedTokens   BigInt?
-  firstSeenAt    DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  cycleId         BigInt
+  owner           String
+  address         String
+  /// [barrier][level] flattened row-major (barrier × 5 + level).
+  particles       Int[]
+  successes       Int[]
+  energyUsed      Int
+  experiments     Int
+  settled         Boolean
+  nominalReward   BigInt
+  claimed         Boolean
+  tokensPaid      BigInt
+  /// Payout computed with the SDK mirror of the program math (null until the cycle is final).
+  expectedTokens  BigInt?
+  claimSignature  String?
+  firstSeenAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  round Round @relation(fields: [roundId], references: [id])
+  cycle Cycle @relation(fields: [cycleId], references: [id])
 
-  @@id([roundId, owner])
+  @@id([cycleId, owner])
   @@index([owner])
 }
 
-/// One row per `ParticlesDeployed` event — the live activity feed.
-model Deposit {
-  signature  String
-  eventIndex Int
-  roundId    BigInt
-  owner      String
-  barrier    Int
-  count      Int
-  lamports   BigInt
-  blockTime  DateTime?
-  slot       BigInt
+/// One experiment = one `ParticlesDeployed` event (a mining attempt).
+model Experiment {
+  cycleId          BigInt
+  owner            String
+  /// Sequence number within the wallet's position for this cycle.
+  seq              Int
+  signature        String
+  eventIndex       Int
+  slot             BigInt
+  blockTime        DateTime?
+  barrier          Int
+  level            Int
+  count            Int
+  firstIndex       Int
+  energyCost       Int
+  heightMilli      Int
+  widthMilli       Int
+  energyBps        Int
+  transmissionPpb  Int
+  /// Nominal $TUNNEL base units per successful particle.
+  nominalReward    BigInt
+  /// pending → awaiting_randomness → settled | void; "claimed" once paid.
+  status           String    @default("pending")
+  /// Derived from the revealed randomness (null until revealed).
+  successes        Int?
+  /// Per-particle outcomes as a bit string ("1" = tunneled), index order.
+  outcomeBits      String?
+  /// This experiment's share of the position payout (null until the cycle is final).
+  rewardTokens     BigInt?
+  updatedAt        DateTime  @updatedAt
 
-  @@id([signature, eventIndex])
-  @@index([roundId])
-  @@index([owner])
+  // No FK to Cycle: experiments are ingested from events, which can arrive
+  // before the reconciler has created the cycle row.
+  @@id([cycleId, owner, seq])
+  @@unique([signature, eventIndex])
+  @@index([owner, slot])
   @@index([slot])
+  @@index([status])
+  @@index([barrier])
 }
 
 /// One row per `RewardClaimed` event.
 model Claim {
   signature  String
   eventIndex Int
-  roundId    BigInt
+  cycleId    BigInt
   owner      String
-  lamports   BigInt
   tokens     BigInt
   outcome    Int
   blockTime  DateTime?
@@ -122,48 +164,59 @@ model Claim {
 
   @@id([signature, eventIndex])
   @@index([owner])
-  @@index([roundId])
+  @@index([cycleId])
 }
 
-/// Per-wallet aggregates, recomputed from Position rows (never incremented blindly).
+/// Per-wallet aggregates, recomputed from Position/Experiment rows (never incremented blindly).
 model WalletStats {
-  owner             String   @id
-  roundsPlayed      Int
-  particles         BigInt
-  successes         BigInt
-  failures          BigInt
-  lamportsCommitted BigInt
-  lamportsReceived  BigInt
-  tokensMined       BigInt
-  claimableRounds   Int
-  updatedAt         DateTime @updatedAt
+  owner            String   @id
+  cyclesPlayed     Int
+  experiments      Int
+  particles        BigInt
+  successes        BigInt
+  failures         BigInt
+  energyUsed       BigInt
+  /// Claimed + claimable (final cycles only).
+  tokensEarned     BigInt
+  tokensClaimed    BigInt
+  bestCycleTokens  BigInt
+  /// Longest run of consecutive played cycles with at least one tunnel.
+  longestStreak    Int
+  currentStreak    Int
+  claimableCycles  Int
+  updatedAt        DateTime @updatedAt
 
-  @@index([tokensMined])
+  @@index([tokensEarned])
   @@index([successes])
-  @@index([lamportsReceived])
+  @@index([particles])
+  @@index([bestCycleTokens])
+  @@index([longestStreak])
+  @@index([cyclesPlayed])
 }
 
-/// Singleton mirror of the onchain Protocol account.
+/// Singleton mirror of the onchain Protocol account (ProtocolConfiguration).
 model ProtocolState {
-  id                     Int      @id @default(1)
-  address                String
-  admin                  String
-  treasury               String
-  tunnelMint             String
-  rewardVault            String
-  paused                 Boolean
-  params                 Json
-  nextRoundId            BigInt
-  reserveAvailable       BigInt
-  reserveFundedTotal     BigInt
-  totalLamportsCommitted BigInt
-  totalParticles         BigInt
-  totalSuccesses         BigInt
-  totalTokensAllocated   BigInt
-  totalFeesLamports      BigInt
-  roundsSettled          BigInt
-  slot                   BigInt
-  updatedAt              DateTime @updatedAt
+  id                   Int      @id @default(1)
+  address              String
+  admin                String
+  gatekeeper           String
+  tunnelMint           String
+  rewardVault          String
+  paused               Boolean
+  params               Json
+  odds                 Json
+  nextCycleId          BigInt
+  reserveAvailable     BigInt
+  reserveFundedTotal   BigInt
+  totalExperiments     BigInt
+  totalParticles       BigInt
+  totalEnergy          BigInt
+  totalSuccesses       BigInt
+  totalTokensAllocated BigInt
+  totalTokensClaimed   BigInt
+  cyclesSettled        BigInt
+  slot                 BigInt
+  updatedAt            DateTime @updatedAt
 }
 
 model IndexerCursor {
@@ -177,7 +230,7 @@ model IndexerCursor {
 model KeeperAction {
   id        BigInt   @id @default(autoincrement())
   kind      String
-  roundId   BigInt?
+  cycleId   BigInt?
   target    String?
   signature String?
   status    String
@@ -186,5 +239,15 @@ model KeeperAction {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
-  @@index([roundId])
+  @@index([cycleId])
+  @@index([status, createdAt])
+}
+
+/// Rate-limit buckets for the deployment co-signing service (gatekeeper) and APIs.
+model RateLimit {
+  key       String   @id
+  count     Int
+  windowEnd DateTime
+
+  @@index([windowEnd])
 }

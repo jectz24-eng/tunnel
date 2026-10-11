@@ -4,12 +4,13 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import type { Connection, PublicKey } from "@solana/web3.js";
 import {
+  fetchCycles,
   fetchOwnerPositions,
+  fetchPosition,
   fetchProtocol,
-  fetchRounds,
+  type CycleAccount,
   type PositionAccount,
   type ProtocolAccount,
-  type RoundAccount,
 } from "@tunnel/sdk";
 import { useEffect, useState } from "react";
 import { appConfig } from "./config";
@@ -58,42 +59,42 @@ export function useChainClock(tickMs = 250) {
   return { now, synced: clockSynced };
 }
 
-// ---------------------------------------------------------------- protocol + rounds
+// ---------------------------------------------------------------- protocol + cycles
 
 export function useProtocol() {
   const { connection } = useConnection();
   return usePoll<ProtocolAccount | null>("protocol", () => fetchProtocol(connection, appConfig.programId), 4_000);
 }
 
-export interface RoundView {
-  /** Round currently accepting deposits (open_ts ≤ now < close_ts), if any. */
-  current: RoundAccount | null;
-  /** Round scheduled to start when the current one ends. */
-  upcoming: RoundAccount | null;
-  /** Most recent rounds, newest first (including current). */
-  recent: RoundAccount[];
+export interface CycleView {
+  /** Cycle currently accepting particles (open_ts ≤ now < close_ts), if any. */
+  current: CycleAccount | null;
+  /** Cycle scheduled to start when the current one ends. */
+  upcoming: CycleAccount | null;
+  /** Most recent cycles, newest first (including current). */
+  recent: CycleAccount[];
 }
 
-export function useRounds(count = 12) {
+export function useCycles(count = 12) {
   const { connection } = useConnection();
   const protocol = useProtocol();
-  const next = protocol.data?.nextRoundId;
-  const snap = usePoll<RoundAccount[]>(
-    next != null ? `rounds:${next}:${count}` : null,
+  const next = protocol.data?.nextCycleId;
+  const snap = usePoll<CycleAccount[]>(
+    next != null ? `cycles:${next}:${count}` : null,
     async () => {
       const ids: bigint[] = [];
       for (let i = next! - 1n; i >= 0n && ids.length < count; i--) ids.push(i);
-      return (await fetchRounds(connection, ids, appConfig.programId)).filter((r): r is RoundAccount => !!r);
+      return (await fetchCycles(connection, ids, appConfig.programId)).filter((c): c is CycleAccount => !!c);
     },
-    2_000,
+    2_500,
   );
   return { ...snap, protocol };
 }
 
-export function splitRounds(rounds: RoundAccount[] | undefined, now: number): RoundView {
-  const recent = rounds ?? [];
-  const upcoming = recent.find((r) => r.status === "open" && r.openTs > now) ?? null;
-  const current = recent.find((r) => r.status === "open" && r.openTs <= now && now < r.closeTs) ?? null;
+export function splitCycles(cycles: CycleAccount[] | undefined, now: number): CycleView {
+  const recent = cycles ?? [];
+  const upcoming = recent.find((c) => c.status === "open" && c.openTs > now) ?? null;
+  const current = recent.find((c) => c.status === "open" && c.openTs <= now && now < c.closeTs) ?? null;
   return { current, upcoming, recent };
 }
 
@@ -122,6 +123,7 @@ export function useBalances(owner: PublicKey | null) {
   );
 }
 
+/** Every open position of the connected wallet (claimed positions are closed onchain). */
 export function useOwnerPositions() {
   const { connection } = useConnection();
   const { publicKey } = useWallet();
@@ -129,21 +131,38 @@ export function useOwnerPositions() {
     publicKey ? `positions:${publicKey.toBase58()}` : null,
     async () => {
       const list = await fetchOwnerPositions(connection, publicKey!, appConfig.programId);
-      return list.sort((a, b) => (a.roundId < b.roundId ? 1 : -1));
+      return list.sort((a, b) => (a.cycleId < b.cycleId ? 1 : -1));
     },
-    6_000,
+    5_000,
   );
 }
 
-export function useRoundsById(ids: bigint[]) {
+/** The connected wallet's position in one cycle (null when it has not deployed). */
+export function usePosition(cycleId: bigint | null | undefined) {
   const { connection } = useConnection();
-  const key = ids.length ? `roundsById:${ids.join(",")}` : null;
-  return usePoll<Map<string, RoundAccount>>(
+  const { publicKey } = useWallet();
+  return usePoll<PositionAccount | null>(
+    publicKey && cycleId != null ? `positions:one:${publicKey.toBase58()}:${cycleId}` : null,
+    () => fetchPosition(connection, cycleId!, publicKey!, appConfig.programId),
+    3_000,
+  );
+}
+
+export function useCyclesById(ids: bigint[]) {
+  const { connection } = useConnection();
+  const key = ids.length ? `cyclesById:${ids.join(",")}` : null;
+  return usePoll<Map<string, CycleAccount>>(
     key,
     async () => {
-      const rs = await fetchRounds(connection, ids, appConfig.programId);
-      return new Map(rs.filter((r): r is RoundAccount => !!r).map((r) => [r.id.toString(), r]));
+      const cs = await fetchCycles(connection, ids, appConfig.programId);
+      return new Map(cs.filter((c): c is CycleAccount => !!c).map((c) => [c.id.toString(), c]));
     },
-    6_000,
+    5_000,
   );
+}
+
+/** Rent the position account locks while open (returned in full by claim). */
+export function usePositionRent() {
+  const { connection } = useConnection();
+  return usePoll("rent:position", async () => BigInt(await connection.getMinimumBalanceForRentExemption(8 + 123)), 600_000);
 }

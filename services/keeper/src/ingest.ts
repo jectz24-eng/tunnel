@@ -26,39 +26,49 @@ export function rowsFromTx(tx: TxEvents) {
     slot: BigInt(tx.slot),
     blockTime: time,
     name: e.name,
-    roundId: e.data.round_id != null ? big(e.data.round_id) : null,
+    cycleId: e.data.cycle_id != null ? big(e.data.cycle_id) : null,
     owner: str(e.data.owner),
     data: normaliseEventData(e.data),
   }));
-  const deposits = tx.events
+  const experiments = tx.events
     .filter((e) => e.name === "ParticlesDeployed")
     .map((e) => ({
+      cycleId: big(e.data.cycle_id),
+      owner: str(e.data.owner)!,
+      seq: Number(e.data.experiment),
       signature: tx.signature,
       eventIndex: e.index,
-      roundId: big(e.data.round_id),
-      owner: str(e.data.owner)!,
-      barrier: Number(e.data.barrier),
-      count: Number(e.data.count),
-      lamports: big(e.data.lamports),
-      blockTime: time,
       slot: BigInt(tx.slot),
+      blockTime: time,
+      barrier: Number(e.data.barrier),
+      level: Number(e.data.level),
+      count: Number(e.data.count),
+      firstIndex: Number(e.data.first_index),
+      energyCost: Number(e.data.energy_cost),
+      heightMilli: Number(e.data.height_milli),
+      widthMilli: Number(e.data.width_milli),
+      energyBps: Number(e.data.energy_bps),
+      transmissionPpb: Number(e.data.transmission_ppb),
+      nominalReward: big(e.data.nominal_reward),
     }));
   const claims = tx.events
     .filter((e) => e.name === "RewardClaimed")
     .map((e) => ({
       signature: tx.signature,
       eventIndex: e.index,
-      roundId: big(e.data.round_id),
+      cycleId: big(e.data.cycle_id),
       owner: str(e.data.owner)!,
-      lamports: big(e.data.lamports),
       tokens: big(e.data.tokens),
       outcome: Number(e.data.outcome),
       blockTime: time,
       slot: BigInt(tx.slot),
     }));
-  const roundIds = new Set(indexed.filter((r) => r.roundId != null).map((r) => r.roundId!));
-  const owners = new Set(indexed.filter((r) => r.owner != null).map((r) => r.owner!));
-  return { indexed, deposits, claims, roundIds, owners };
+  const cycleIds = new Set(indexed.filter((r) => r.cycleId != null).map((r) => r.cycleId!));
+  // Only wallets acting as participants (not admins or funders) become users.
+  const owners = new Set(
+    tx.events.filter((e) => ["ParticlesDeployed", "RewardClaimed", "PositionSettled"].includes(e.name)).map((e) => str(e.data.owner)!),
+  );
+  return { indexed, experiments, claims, cycleIds, owners, time };
 }
 
 export function decodeTx(programId: PublicKey, signature: string, slot: number, blockTime: number | null, logs: string[]): TxEvents {
@@ -68,10 +78,13 @@ export function decodeTx(programId: PublicKey, signature: string, slot: number, 
 export async function writeTx(db: PrismaClient, tx: TxEvents) {
   const rows = rowsFromTx(tx);
   if (!rows.indexed.length) return rows;
+  const seen = rows.time ?? new Date();
   await db.$transaction([
     db.indexedEvent.createMany({ data: rows.indexed, skipDuplicates: true }),
-    db.deposit.createMany({ data: rows.deposits, skipDuplicates: true }),
+    db.experiment.createMany({ data: rows.experiments, skipDuplicates: true }),
     db.claim.createMany({ data: rows.claims, skipDuplicates: true }),
+    db.user.createMany({ data: [...rows.owners].map((wallet) => ({ wallet, firstSeenAt: seen, lastActivityAt: seen })), skipDuplicates: true }),
+    db.user.updateMany({ where: { wallet: { in: [...rows.owners] }, lastActivityAt: { lt: seen } }, data: { lastActivityAt: seen } }),
   ]);
   return rows;
 }

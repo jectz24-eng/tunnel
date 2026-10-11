@@ -98,6 +98,9 @@ pub fn deploy_particles(
         energy_cost: cost as u16,
         energy_used: position.energy_used,
         energy_per_cycle: cycle.energy_per_cycle,
+        height_milli: cycle.barriers[b].height_milli,
+        width_milli: cycle.barriers[b].width_milli,
+        energy_bps: cycle.levels[l].energy_bps,
         transmission_ppb: cycle.odds.transmission_ppb[b][l],
         nominal_reward: cycle.odds.reward[b][l],
     });

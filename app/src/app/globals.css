@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #05070a;
-  --color-bg-2: #0a0f16;
-  --color-panel: #0d131b;
-  --color-panel-2: #111a24;
-  --color-line: #1c2936;
-  --color-line-soft: #141e29;
-  --color-fg: #f5f7fa;
-  --color-fg-2: #c3ccd7;
-  --color-muted: #8392a5;
-  --color-faint: #56657a;
-  --color-cyan: #31d9f5;
-  --color-blue: #4378ff;
-  --color-violet: #9b75ff;
-  --color-green: #45e6b0;
-  --color-red: #ff7285;
-  --color-amber: #f5c26b;
+  --color-bg: #05070b;
+  --color-bg-2: #0b1018;
+  --color-panel: #0a0f17;
+  --color-panel-2: #101823;
+  --color-line: #1a2532;
+  --color-line-soft: #111a25;
+  --color-fg: #f3f7fa;
+  --color-fg-2: #c0cad5;
+  --color-muted: #81909f;
+  --color-faint: #4c5a69;
+  --color-cyan: #00d9ff;
+  --color-ion: #2864ff;
+  --color-violet: #885bff;
+  --color-flare: #eafbff;
+  --color-amber: #f0a64b;
+  --color-red: #ff6b7d;
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
@@ -32,6 +32,7 @@
     color-scheme: dark;
     background: var(--color-bg);
     -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
   }
   body {
     background: var(--color-bg);
@@ -64,32 +65,121 @@
 }
 
 @layer components {
-  /* Hairline panel with a very faint top highlight — the core surface. */
+  /* Hairline instrument panel with a faint top highlight — the core surface. */
   .panel {
     background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.018), transparent 120px),
+      linear-gradient(180deg, rgb(255 255 255 / 0.02), transparent 140px),
       var(--color-panel);
     border: 1px solid var(--color-line);
     border-radius: 14px;
   }
+  /* Instrument corner ticks: four 10px brackets, no border. */
+  .brackets {
+    position: relative;
+  }
+  .brackets::before,
+  .brackets::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    border-radius: inherit;
+    --tick: color-mix(in oklab, var(--color-cyan) 55%, transparent);
+    background:
+      linear-gradient(var(--tick), var(--tick)) top left / 10px 1px no-repeat,
+      linear-gradient(var(--tick), var(--tick)) top left / 1px 10px no-repeat,
+      linear-gradient(var(--tick), var(--tick)) top right / 10px 1px no-repeat,
+      linear-gradient(var(--tick), var(--tick)) top right / 1px 10px no-repeat;
+  }
+  .brackets::after {
+    background:
+      linear-gradient(var(--tick), var(--tick)) bottom left / 10px 1px no-repeat,
+      linear-gradient(var(--tick), var(--tick)) bottom left / 1px 10px no-repeat,
+      linear-gradient(var(--tick), var(--tick)) bottom right / 10px 1px no-repeat,
+      linear-gradient(var(--tick), var(--tick)) bottom right / 1px 10px no-repeat;
+  }
   .label {
     font-family: var(--font-mono);
     font-size: 0.6875rem;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--color-muted);
   }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-cyan);
+  }
+  .display {
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 0.95;
+  }
   .grid-backdrop {
     background-image:
-      linear-gradient(to right, rgb(28 41 54 / 0.35) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(28 41 54 / 0.35) 1px, transparent 1px);
-    background-size: 48px 48px;
+      linear-gradient(to right, rgb(26 37 50 / 0.45) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(26 37 50 / 0.45) 1px, transparent 1px);
+    background-size: 56px 56px;
     mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 75%);
+  }
+  .fine-grid {
+    background-image:
+      linear-gradient(to right, rgb(26 37 50 / 0.28) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(26 37 50 / 0.28) 1px, transparent 1px);
+    background-size: 14px 14px;
+  }
+  .glow-text {
+    text-shadow: 0 0 24px color-mix(in oklab, var(--color-cyan) 45%, transparent);
+  }
+  .hairline-x {
+    background: linear-gradient(90deg, transparent, var(--color-line) 15%, var(--color-line) 85%, transparent);
+    height: 1px;
+  }
+  /* Range input styled as an instrument dial track. */
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 22px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: linear-gradient(90deg, var(--track-fill, var(--color-cyan)) var(--pct, 50%), var(--color-line) var(--pct, 50%));
+    border-radius: 2px;
+  }
+  .slider::-moz-range-track {
+    height: 2px;
+    background: var(--color-line);
+  }
+  .slider::-moz-range-progress {
+    height: 2px;
+    background: var(--track-fill, var(--color-cyan));
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    margin-top: -7px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-bg);
+    border: 1.5px solid var(--track-fill, var(--color-cyan));
+    box-shadow: 0 0 12px color-mix(in oklab, var(--track-fill, var(--color-cyan)) 60%, transparent);
+  }
+  .slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--color-bg);
+    border: 1.5px solid var(--track-fill, var(--color-cyan));
   }
   .prose-doc h2 {
     font-size: 1.375rem;
     font-weight: 600;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     margin-top: 3.5rem;
     margin-bottom: 1rem;
     scroll-margin-top: 6rem;
@@ -200,7 +290,22 @@
   animation: pulse-dot 1.8s ease-in-out infinite;
 }
 
+@keyframes scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+.scan-line {
+  animation: scan 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   *,
   *::before,
   *::after {

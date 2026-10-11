@@ -25,6 +25,7 @@ import {
   computePayout,
   deriveOdds,
   fetchCycle,
+  fetchOraoRandomness,
   fetchCyclePositions,
   fetchPosition,
   fetchProtocol,
@@ -124,12 +125,14 @@ async function fulfill(seed: Uint8Array) {
   for (let attempt = 1; ; attempt++) {
     try {
       await new FulfillBuilder(vrf, seed).withComputeUnitPrice(0n).rpc(fulfillmentAuthority.publicKey, signature);
-      return;
+      break;
     } catch (e) {
       if (attempt < 6 && isBlockhashError(e)) continue;
       throw e;
     }
   }
+  // The Orao client confirms at its own commitment; wait until the fulfillment is visible at "confirmed".
+  for (let i = 0; i < 40 && !(await fetchOraoRandomness(connection, seed)).fulfilled; i++) await new Promise((r) => setTimeout(r, 250));
 }
 
 async function closeAndRequest(id: bigint) {

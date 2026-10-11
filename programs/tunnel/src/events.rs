@@ -70,6 +70,10 @@ pub struct ParticlesDeployed {
     pub energy_cost: u16,
     pub energy_used: u16,
     pub energy_per_cycle: u16,
+    /// Physical inputs of this attempt (from the cycle snapshot): V₀×1000, a×1000, E/V₀ in bps.
+    pub height_milli: u32,
+    pub width_milli: u32,
+    pub energy_bps: u16,
     pub transmission_ppb: u32,
     pub nominal_reward: u64,
 }

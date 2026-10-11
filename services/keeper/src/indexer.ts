@@ -12,7 +12,7 @@ import { withRetry } from "./retry";
 
 const CURSOR_ID = "program-signatures";
 
-export type TouchFn = (roundIds: Set<bigint>, owners: Set<string>) => void;
+export type TouchFn = (cycleIds: Set<bigint>, owners: Set<string>) => void;
 
 export class Indexer {
   private subscription: number | null = null;
@@ -34,7 +34,7 @@ export class Indexer {
           const rows = await writeTx(this.db, decodeTx(this.programId, l.signature, ctx.slot, blockTime, l.logs));
           if (rows.indexed.length) {
             log.debug({ sig: l.signature, events: rows.indexed.map((r) => r.name) }, "live events");
-            this.touch(rows.roundIds, rows.owners);
+            this.touch(rows.cycleIds, rows.owners);
           }
         } catch (e) {
           // The backfill will pick this signature up; nothing is lost.
@@ -73,7 +73,7 @@ export class Indexer {
         );
         if (tx?.meta?.logMessages && !tx.meta.err) {
           const rows = await writeTx(this.db, decodeTx(this.programId, s.signature, tx.slot, tx.blockTime ?? null, tx.meta.logMessages));
-          if (rows.indexed.length) this.touch(rows.roundIds, rows.owners);
+          if (rows.indexed.length) this.touch(rows.cycleIds, rows.owners);
         }
       }
       await this.db.indexerCursor.upsert({
@@ -110,7 +110,7 @@ export class Indexer {
     if (dropped.length) {
       await this.db.$transaction([
         this.db.indexedEvent.deleteMany({ where: { signature: { in: dropped } } }),
-        this.db.deposit.deleteMany({ where: { signature: { in: dropped } } }),
+        this.db.experiment.deleteMany({ where: { signature: { in: dropped } } }),
         this.db.claim.deleteMany({ where: { signature: { in: dropped } } }),
       ]);
       log.warn({ dropped }, "removed events from dropped transactions");
@@ -126,7 +126,7 @@ export class Indexer {
       const blockTime = new Date(t * 1000);
       await this.db.$transaction([
         this.db.indexedEvent.updateMany({ where: { slot, blockTime: null }, data: { blockTime } }),
-        this.db.deposit.updateMany({ where: { slot, blockTime: null }, data: { blockTime } }),
+        this.db.experiment.updateMany({ where: { slot, blockTime: null }, data: { blockTime } }),
         this.db.claim.updateMany({ where: { slot, blockTime: null }, data: { blockTime } }),
       ]);
     }
