@@ -10,10 +10,7 @@ export default function HomePage() {
   return (
     <>
       <Hero />
-      {/* Slides up over the hero as it dissolves, so there is no dead gap. */}
-      <div className="relative z-10 -mt-[60vh] bg-[linear-gradient(to_bottom,transparent,#05070B_22vh)]">
-        <Phenomenon />
-      </div>
+      <Phenomenon />
       <ProtocolSteps />
       <LiveAccelerator />
       <BarrierChoice />

@@ -46,7 +46,7 @@ export interface Annotation {
   side?: "auto" | "left" | "right";
 }
 
-export type AnchorName = "ring" | "magnets" | "core" | "conduits" | "barrier" | "width" | "pylon" | "transmission";
+export type AnchorName = "ring" | "ringBack" | "magnets" | "core" | "conduits" | "barrier" | "barrierTop" | "width" | "pylon" | "transmission";
 
 const R = 4.2;
 const BARRIER_THETA = Math.PI * 0.36;
@@ -364,6 +364,8 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
       core: new THREE.Vector3(0, 0.1, 0),
       conduits: new THREE.Vector3(Math.cos(conduit) * R * 0.55, 0, Math.sin(conduit) * R * 0.55),
       barrier: barrierPos.clone().setY(1.0),
+      barrierTop: barrierPos.clone().setY(1.3),
+      ringBack: onRing(-Math.PI * 0.58, 0.12),
       width: barrierPos.clone().setY(-0.9),
       pylon: barrierPos.clone().addScaledVector(radial, 0.78).setY(0.6),
       transmission: onRing(BARRIER_THETA + 0.42, 0.1),
