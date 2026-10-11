@@ -1,6 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import type { NextRequest } from "next/server";
 import nacl from "tweetnacl";
+import { getDb, hasDatabase } from "@tunnel/db";
 import { isBase58Address, json } from "@/server/http";
 import { SESSION_COOKIE, checkSignInMessage, issueSession } from "@/server/session";
 
@@ -21,6 +22,12 @@ export async function POST(req: NextRequest) {
   );
   if (!ok) return json({ error: "signature does not match address" }, { status: 401 });
 
+  if (hasDatabase()) {
+    const now = new Date();
+    await getDb()
+      .user.upsert({ where: { wallet: body.address! }, create: { wallet: body.address!, firstSeenAt: now, lastActivityAt: now }, update: { lastActivityAt: now } })
+      .catch(() => undefined); // the session never depends on the indexer
+  }
   const session = issueSession(body.address!);
   const res = json({ address: body.address });
   res.cookies.set(SESSION_COOKIE, session.value, {
