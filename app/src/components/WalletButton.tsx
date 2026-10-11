@@ -34,8 +34,15 @@ export function WalletButton({ className }: { className?: string }) {
   if (!connected || !publicKey) {
     return (
       <>
-        <Button variant="primary" size="sm" className={cx("whitespace-nowrap", className)} onClick={() => setPickerOpen(true)} disabled={connecting}>
-          {connecting ? "Connecting…" : "Connect Wallet"}
+        <Button variant="primary" size="sm" aria-label="Connect Wallet" className={cx("whitespace-nowrap", className)} onClick={() => setPickerOpen(true)} disabled={connecting}>
+          {connecting ? (
+            "Connecting…"
+          ) : (
+            <>
+              <span className="sm:hidden">Connect</span>
+              <span className="hidden sm:inline">Connect Wallet</span>
+            </>
+          )}
         </Button>
         <WalletPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
       </>

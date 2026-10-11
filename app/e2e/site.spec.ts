@@ -20,9 +20,17 @@ test.describe("every page", () => {
 
 test("navigation has every section plus wallet and mining CTAs", async ({ page, isMobile }) => {
   await page.goto("/");
-  if (isMobile) await page.getByRole("button", { name: "Menu" }).click();
+  if (isMobile) {
+    const menu = page.getByRole("button", { name: "Menu" });
+    // Retry until hydrated: a click before React attaches its handler does nothing.
+    await expect(async () => {
+      if ((await menu.getAttribute("aria-expanded")) !== "true") await menu.click();
+      await expect(menu).toHaveAttribute("aria-expanded", "true", { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
+  }
+  const nav = page.getByRole("navigation", { name: isMobile ? "Mobile" : "Primary" });
   for (const label of ["Accelerator", "How it works", "Laboratory", "Leaderboard", "Tokenomics", "History"]) {
-    await expect(page.getByRole("link", { name: label, exact: true }).first()).toBeVisible();
+    await expect(nav.getByRole("link", { name: new RegExp(`${label}$`) })).toBeVisible();
   }
   await expect(page.getByRole("button", { name: /connect wallet/i }).first()).toBeVisible();
 });

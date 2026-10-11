@@ -117,7 +117,7 @@ export function TransmissionChart({
             {r.toFixed(2)}
           </text>
         ))}
-        <text x={W - pad.r} y={H - 10} textAnchor="end" className="fill-[#81909f] font-mono text-[10px]">
+        <text x={W - pad.r - 4} y={pad.t + ih - 6} textAnchor="end" className="fill-[#81909f] font-mono text-[10px]">
           E / V₀ →
         </text>
         {markers.map((m, i) => (

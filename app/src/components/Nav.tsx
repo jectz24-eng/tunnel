@@ -65,9 +65,11 @@ export function Nav() {
           <CycleChip />
           <SoundToggle className="hidden sm:flex" />
           <WalletButton />
-          <ButtonLink href="/accelerator" variant="energy" size="sm" className="hidden px-3.5 font-mono text-[11px] uppercase tracking-[0.12em] md:inline-flex">
-            Start mining
-          </ButtonLink>
+          <span className="hidden md:inline-flex">
+            <ButtonLink href="/accelerator" variant="energy" size="sm" className="px-3.5 font-mono text-[11px] uppercase tracking-[0.12em]">
+              Start mining
+            </ButtonLink>
+          </span>
           <button className="flex size-9 items-center justify-center rounded-lg text-fg-2 hover:bg-panel-2 xl:hidden" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open}>
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
               <path d={open ? "M3 3l10 10M13 3 3 13" : "M2 5h12M2 11h12"} stroke="currentColor" strokeWidth="1.4" />

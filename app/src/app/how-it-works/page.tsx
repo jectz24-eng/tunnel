@@ -53,7 +53,7 @@ export default function HowItWorksPage() {
         </section>
 
         <div className="prose-doc mt-16 grid gap-x-16 lg:grid-cols-2">
-          <section>
+          <section className="min-w-0">
             <h2 id="energy">Energy, not money</h2>
             <p>
               Each wallet receives a fixed particle-energy allowance every cycle (100 units at launch). An experiment spends <code>particles × cost</code>,
@@ -109,7 +109,7 @@ export default function HowItWorksPage() {
             </ul>
           </section>
 
-          <section>
+          <section className="min-w-0">
             <h2 id="rewards">Rewards from a fixed reserve</h2>
             <p>
               $TUNNEL is never minted by the program. Rewards come from a reserve that was funded in advance into a program-owned vault; tokens leave it only
