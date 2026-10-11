@@ -1,17 +1,18 @@
 /**
- * Creates the $TUNNEL SPL mint (6 decimals) and mints the fixed 1,000,000,000
- * supply to the operator wallet.
+ * Creates the $TUNNEL SPL mint (6 decimals) and mints the supply to the operator wallet.
  *
- *   npm run setup:token                 # devnet (default RPC)
- *   npm run setup:token -- --revoke     # also revoke mint authority (fixes supply forever)
+ *   npm run setup:token                              # devnet (default RPC), placeholder supply
+ *   npm run setup:token -- --supply 1000000000       # whole $TUNNEL
+ *   npm run setup:token -- --revoke                  # also revoke mint authority (fixes supply forever)
  *
- * Only the 600M mining reserve has a defined destination (fund-reserve.ts).
- * The other 400M stay in the operator wallet, UNALLOCATED, until the owner
- * approves final tokenomics.
+ * The default supply is a PLACEHOLDER (PLACEHOLDER_TOKENOMICS) until the
+ * project owner supplies final tokenomics. Only the emissions reserve has a
+ * defined destination (fund-reserve.ts); the rest stays in the operator
+ * wallet, unallocated.
  */
 import { AuthorityType, createMint, getOrCreateAssociatedTokenAccount, mintTo, setAuthority } from "@solana/spl-token";
-import { TUNNEL_DECIMALS, TUNNEL_TOTAL_SUPPLY } from "../packages/sdk/src";
-import { connection, explorer, guardCluster, loadKeypair, readDeployment, writeDeployment } from "./lib";
+import { PLACEHOLDER_TOKENOMICS, TUNNEL_DECIMALS, TUNNEL_UNIT, formatTunnel } from "../packages/sdk/src";
+import { arg, connection, explorer, guardCluster, loadKeypair, readDeployment, writeDeployment } from "./lib";
 
 async function main() {
   const conn = connection();
@@ -22,8 +23,9 @@ async function main() {
   const mint = await createMint(conn, payer, payer.publicKey, null, TUNNEL_DECIMALS);
   console.log(`mint: ${mint.toBase58()}`);
   const ata = await getOrCreateAssociatedTokenAccount(conn, payer, mint, payer.publicKey);
-  const sig = await mintTo(conn, payer, mint, ata.address, payer, TUNNEL_TOTAL_SUPPLY);
-  console.log(`minted 1,000,000,000 $TUNNEL → ${ata.address.toBase58()}\n  ${explorer(sig, cluster)}`);
+  const supply = arg("supply") ? BigInt(arg("supply")!) * TUNNEL_UNIT : PLACEHOLDER_TOKENOMICS.totalSupply;
+  const sig = await mintTo(conn, payer, mint, ata.address, payer, supply);
+  console.log(`minted ${formatTunnel(supply)} $TUNNEL${arg("supply") ? "" : " (PLACEHOLDER supply)"} → ${ata.address.toBase58()}\n  ${explorer(sig, cluster)}`);
 
   if (process.argv.includes("--revoke")) {
     const s = await setAuthority(conn, payer, mint, payer, AuthorityType.MintTokens, null);

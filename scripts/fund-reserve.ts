@@ -2,11 +2,11 @@
  * Moves $TUNNEL from the operator wallet into the program's reward vault.
  * Tokens in the vault can only ever leave through user claims.
  *
- *   npm run setup:fund                      # the full 600,000,000 mining reserve
+ *   npm run setup:fund                      # the placeholder emissions reserve (600,000,000)
  *   npm run setup:fund -- --amount 1000000  # whole $TUNNEL
  */
 import { PublicKey } from "@solana/web3.js";
-import { TUNNEL_DECIMALS, TUNNEL_MINING_RESERVE, TunnelInstructions, fetchProtocol, formatTunnel } from "../packages/sdk/src";
+import { PLACEHOLDER_TOKENOMICS, TUNNEL_UNIT, TunnelInstructions, fetchProtocol, formatTunnel } from "../packages/sdk/src";
 import { arg, connection, explorer, guardCluster, loadKeypair, readDeployment, sendIxs } from "./lib";
 
 async function main() {
@@ -19,7 +19,7 @@ async function main() {
   if (!protocol) throw new Error("protocol not initialized");
 
   const whole = arg("amount");
-  const amount = whole ? BigInt(whole) * 10n ** BigInt(TUNNEL_DECIMALS) : TUNNEL_MINING_RESERVE;
+  const amount = whole ? BigInt(whole) * TUNNEL_UNIT : PLACEHOLDER_TOKENOMICS.miningReserve;
   const sig = await sendIxs(conn, funder, [
     tunnel.fundReserve({ funder: funder.publicKey, tunnelMint: protocol.tunnelMint, funderTokenAccount: new PublicKey(dep.operatorTokenAccount), amount }),
   ]);

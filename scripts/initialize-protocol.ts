@@ -1,11 +1,16 @@
 /**
  * Initializes the deployed TUNNEL program (must be run by its upgrade authority).
  *
- *   npm run setup:protocol -- --treasury <pubkey>
+ *   npm run setup:protocol
+ *   npm run setup:protocol -- --gatekeeper <pubkey>   # require co-signed deployments (rate limiting)
+ *   npm run setup:protocol -- --cycle-secs 600        # override the cycle length
+ *
+ * The program derives every tunneling probability from the barrier physics in
+ * DEFAULT_PARAMS; the resulting odds table is printed for review.
  */
 import { PublicKey } from "@solana/web3.js";
-import { DEFAULT_PARAMS, TunnelInstructions, fetchProtocol, protocolPda, rewardVaultPda } from "../packages/sdk/src";
-import { arg, connection, explorer, guardCluster, loadKeypair, readDeployment, sendIxs, writeDeployment } from "./lib";
+import { DEFAULT_PARAMS, TunnelInstructions, deriveOdds, fetchProtocol, formatPpb, formatTunnel, protocolPda, rewardVaultPda } from "../packages/sdk/src";
+import { PHYSICS_CU, arg, connection, explorer, guardCluster, loadKeypair, readDeployment, sendIxs, writeDeployment } from "./lib";
 
 async function main() {
   const conn = connection();
@@ -13,24 +18,25 @@ async function main() {
   const admin = loadKeypair();
   const dep = readDeployment(cluster);
   if (!dep.tunnelMint) throw new Error("run `npm run setup:token` first");
-  const treasuryArg = arg("treasury");
-  if (!treasuryArg) throw new Error("--treasury <pubkey> is required (a wallet you control, ideally a multisig)");
-  const treasury = new PublicKey(treasuryArg);
+  const gatekeeper = arg("gatekeeper") ? new PublicKey(arg("gatekeeper")!) : PublicKey.default;
+  const params = { ...DEFAULT_PARAMS, cycleDurationSecs: Number(arg("cycle-secs") ?? DEFAULT_PARAMS.cycleDurationSecs) };
   const tunnel = new TunnelInstructions();
 
   if (await fetchProtocol(conn, tunnel.programId)) {
     console.log("protocol already initialized");
     return;
   }
-  const sig = await sendIxs(conn, admin, [
-    tunnel.initialize({ admin: admin.publicKey, tunnelMint: new PublicKey(dep.tunnelMint), treasury, params: DEFAULT_PARAMS }),
-  ]);
+  const odds = deriveOdds(params);
+  console.log("odds the program will derive ([barrier][level] probability · reward per success):");
+  odds.transmissionPpb.forEach((row, b) => console.log(`  barrier ${b}: ` + row.map((p, l) => `${formatPpb(p)} · ${formatTunnel(odds.reward[b][l])}`).join("  |  ")));
+
+  const sig = await sendIxs(conn, admin, [tunnel.initialize({ admin: admin.publicKey, tunnelMint: new PublicKey(dep.tunnelMint), gatekeeper, params })], [], PHYSICS_CU);
   console.log(`initialized\n  ${explorer(sig, cluster)}`);
   writeDeployment(cluster, {
     programId: tunnel.programId.toBase58(),
     protocol: protocolPda(tunnel.programId).toBase58(),
     rewardVault: rewardVaultPda(tunnel.programId).toBase58(),
-    treasury: treasury.toBase58(),
+    gatekeeper: gatekeeper.toBase58(),
     admin: admin.publicKey.toBase58(),
   });
 }

@@ -3,28 +3,23 @@
  *   - airdrops local SOL to the operator and keeper
  *   - initialises a local ORAO VRF network state whose fulfillment authority is
  *     keys/localnet-vrf-authority.json (served by scripts/local-vrf-fulfiller.ts)
- *   - creates $TUNNEL, initialises the protocol, funds the 600M reserve
+ *   - creates $TUNNEL (placeholder supply), initialises the protocol, funds the reserve
  *
- *   SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/local-setup.ts
+ *   SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/local-setup.ts [--cycle-secs 120] [--gatekeeper]
+ *
+ * `--gatekeeper` creates keys/localnet-gatekeeper.json and requires every
+ * deployment to be co-signed by it (the app's /api/gatekeeper route signs
+ * after rate-limit checks when GATEKEEPER_KEYPAIR points at that file).
  */
 import { AnchorProvider, Wallet } from "@coral-xyz/anchor";
 import BN from "bn.js";
 import { InitBuilder, Orao, networkStateAccountAddress } from "@orao-network/solana-vrf";
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
-import { Keypair, LAMPORTS_PER_SOL, type Connection, type PublicKey } from "@solana/web3.js";
+import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Connection } from "@solana/web3.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  DEFAULT_PARAMS,
-  TUNNEL_DECIMALS,
-  TUNNEL_MINING_RESERVE,
-  TUNNEL_TOTAL_SUPPLY,
-  TunnelInstructions,
-  fetchProtocol,
-  protocolPda,
-  rewardVaultPda,
-} from "../packages/sdk/src";
-import { ROOT, connection, guardCluster, sendIxs, writeDeployment } from "./lib";
+import { DEFAULT_PARAMS, PLACEHOLDER_TOKENOMICS, TUNNEL_DECIMALS, TunnelInstructions, fetchProtocol, protocolPda, rewardVaultPda } from "../packages/sdk/src";
+import { PHYSICS_CU, ROOT, arg, connection, guardCluster, sendIxs, writeDeployment } from "./lib";
 
 export function localKey(name: string): Keypair {
   const dir = join(ROOT, "keys");
@@ -50,9 +45,9 @@ async function main() {
   const keeper = localKey("keeper");
   const vrfAuthority = localKey("vrf-authority");
   const vrfTreasury = localKey("vrf-treasury");
-  const treasury = localKey("treasury");
+  const gatekeeper = process.argv.includes("--gatekeeper") ? localKey("gatekeeper") : null;
 
-  for (const k of [operator, keeper, vrfAuthority, vrfTreasury, treasury]) await airdrop(conn, k.publicKey, 100);
+  for (const k of [operator, keeper, vrfAuthority, vrfTreasury]) await airdrop(conn, k.publicKey, 100);
   console.log(`operator ${operator.publicKey.toBase58()} · keeper ${keeper.publicKey.toBase58()}`);
 
   // Local ORAO network: the real ORAO program (cloned), our own fulfillment key.
@@ -69,12 +64,21 @@ async function main() {
   }
   const mint = await createMint(conn, operator, operator.publicKey, null, TUNNEL_DECIMALS);
   const ata = await getOrCreateAssociatedTokenAccount(conn, operator, mint, operator.publicKey);
-  await mintTo(conn, operator, mint, ata.address, operator, TUNNEL_TOTAL_SUPPLY);
-  console.log(`$TUNNEL mint ${mint.toBase58()} (1B minted to operator)`);
+  await mintTo(conn, operator, mint, ata.address, operator, PLACEHOLDER_TOKENOMICS.totalSupply);
+  console.log(`$TUNNEL mint ${mint.toBase58()} (placeholder supply minted to operator)`);
 
-  await sendIxs(conn, operator, [tunnel.initialize({ admin: operator.publicKey, tunnelMint: mint, treasury: treasury.publicKey, params: DEFAULT_PARAMS })]);
-  await sendIxs(conn, operator, [tunnel.fundReserve({ funder: operator.publicKey, tunnelMint: mint, funderTokenAccount: ata.address, amount: TUNNEL_MINING_RESERVE })]);
-  console.log("protocol initialised; 600,000,000 $TUNNEL funded into the reward vault");
+  const params = { ...DEFAULT_PARAMS, cycleDurationSecs: Number(arg("cycle-secs") ?? 120) };
+  await sendIxs(
+    conn,
+    operator,
+    [tunnel.initialize({ admin: operator.publicKey, tunnelMint: mint, gatekeeper: gatekeeper?.publicKey ?? PublicKey.default, params })],
+    [],
+    PHYSICS_CU,
+  );
+  await sendIxs(conn, operator, [
+    tunnel.fundReserve({ funder: operator.publicKey, tunnelMint: mint, funderTokenAccount: ata.address, amount: PLACEHOLDER_TOKENOMICS.miningReserve }),
+  ]);
+  console.log(`protocol initialised (cycle ${params.cycleDurationSecs}s${gatekeeper ? ", gatekeeper on" : ""}); placeholder reserve funded`);
 
   writeDeployment("localnet", {
     programId: tunnel.programId.toBase58(),
@@ -82,9 +86,9 @@ async function main() {
     rewardVault: rewardVaultPda().toBase58(),
     tunnelMint: mint.toBase58(),
     operatorTokenAccount: ata.address.toBase58(),
-    treasury: treasury.publicKey.toBase58(),
     admin: operator.publicKey.toBase58(),
     keeper: keeper.publicKey.toBase58(),
+    gatekeeper: (gatekeeper?.publicKey ?? PublicKey.default).toBase58(),
     vrfFulfillmentAuthority: vrfAuthority.publicKey.toBase58(),
   });
 }

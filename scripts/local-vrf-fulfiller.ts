@@ -1,6 +1,6 @@
 /**
  * LOCALNET ONLY: plays the role of the ORAO fulfillment network. It watches
- * TUNNEL rounds whose randomness was requested and fulfils them through the
+ * TUNNEL cycles whose randomness was requested and fulfils them through the
  * real (cloned) ORAO program, signing each seed with the local authority key —
  * the same signature check ORAO performs on devnet/mainnet.
  *
@@ -9,7 +9,7 @@
 import { AnchorProvider, Wallet } from "@coral-xyz/anchor";
 import { FulfillBuilder, Orao } from "@orao-network/solana-vrf";
 import nacl from "tweetnacl";
-import { TunnelInstructions, fetchOraoRandomness, fetchProtocol, fetchRounds, toHex } from "../packages/sdk/src";
+import { TunnelInstructions, fetchCycles, fetchOraoRandomness, fetchProtocol, toHex } from "../packages/sdk/src";
 import { connection, guardCluster } from "./lib";
 import { localKey } from "./local-setup";
 
@@ -26,14 +26,14 @@ async function main() {
       const p = await fetchProtocol(conn, programId);
       if (p) {
         const ids: bigint[] = [];
-        for (let i = p.nextRoundId - 20n; i < p.nextRoundId; i++) if (i >= 0n) ids.push(i);
-        for (const r of await fetchRounds(conn, ids, programId)) {
-          if (!r || (r.status !== "closed" && r.status !== "awaitingRandomness")) continue;
-          const req = await fetchOraoRandomness(conn, r.vrfSeed);
+        for (let i = p.nextCycleId - 20n; i < p.nextCycleId; i++) if (i >= 0n) ids.push(i);
+        for (const c of await fetchCycles(conn, ids, programId)) {
+          if (!c || (c.status !== "closed" && c.status !== "awaitingRandomness")) continue;
+          const req = await fetchOraoRandomness(conn, c.vrfSeed);
           if (!req.exists || req.fulfilled) continue;
-          const sig = nacl.sign.detached(r.vrfSeed, authority.secretKey);
-          await new FulfillBuilder(vrf, r.vrfSeed).withComputeUnitPrice(0n).rpc(authority.publicKey, sig);
-          console.log(`fulfilled round #${r.id} seed ${toHex(r.vrfSeed).slice(0, 16)}…`);
+          const sig = nacl.sign.detached(c.vrfSeed, authority.secretKey);
+          await new FulfillBuilder(vrf, c.vrfSeed).withComputeUnitPrice(0n).rpc(authority.publicKey, sig);
+          console.log(`fulfilled cycle #${c.id} seed ${toHex(c.vrfSeed).slice(0, 16)}…`);
         }
       }
     } catch (e) {

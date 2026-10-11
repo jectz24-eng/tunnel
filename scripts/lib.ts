@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Connection, Keypair, Transaction, sendAndConfirmTransaction, type TransactionInstruction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, Transaction, sendAndConfirmTransaction, type TransactionInstruction } from "@solana/web3.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -45,10 +45,13 @@ export function loadKeypair(path = process.env.KEYPAIR_PATH ?? join(homedir(), "
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
 }
 
-export async function sendIxs(conn: Connection, payer: Keypair, ixs: TransactionInstruction[], extra: Keypair[] = []) {
-  const sig = await sendAndConfirmTransaction(conn, new Transaction().add(...ixs), [payer, ...extra], { commitment: "confirmed" });
-  return sig;
+/** `computeUnits` is needed for initialize / update_params, which evaluate the physics model in soft-float. */
+export async function sendIxs(conn: Connection, payer: Keypair, ixs: TransactionInstruction[], extra: Keypair[] = [], computeUnits?: number) {
+  const all = computeUnits ? [ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }), ...ixs] : ixs;
+  return sendAndConfirmTransaction(conn, new Transaction().add(...all), [payer, ...extra], { commitment: "confirmed" });
 }
+
+export const PHYSICS_CU = 400_000;
 
 export function explorer(sig: string, cluster: string) {
   const c = cluster === "mainnet-beta" ? "" : cluster === "localnet" ? "?cluster=custom" : `?cluster=${cluster}`;
