@@ -1,21 +1,22 @@
 import type { Metadata, Viewport } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
+import { DeploymentBanner } from "@/components/DeploymentBanner";
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { Providers } from "@/components/Providers";
 import { WalletAuthProvider } from "@/components/WalletAuth";
-import { DeploymentBanner } from "@/components/DeploymentBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "TUNNEL — Mine through the impossible", template: "%s · TUNNEL" },
-  description: "Deploy particles. Challenge quantum barriers. Mine $TUNNEL on Solana. A quantum-inspired mining protocol with onchain settlement and verifiable outcomes.",
+  title: { default: "$TUNNEL — Mine through the impossible", template: "%s · $TUNNEL" },
+  description:
+    "Quantum Tunneling Protocol on Solana. Deploy particles against potential barriers, let verifiable randomness decide what tunnels through, and earn $TUNNEL from a fixed emissions reserve.",
   icons: { icon: "/icon.svg" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05070A",
+  themeColor: "#05070B",
   width: "device-width",
   initialScale: 1,
 };
@@ -28,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <WalletAuthProvider>
             <Nav />
             <DeploymentBanner />
-            <main>{children}</main>
+            <main id="main">{children}</main>
             <Footer />
           </WalletAuthProvider>
         </Providers>

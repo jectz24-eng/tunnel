@@ -1,0 +1,557 @@
+"use client";
+
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type MutableRefObject, type Ref } from "react";
+import * as THREE from "three";
+import { TimerDriver, useTimerDriven } from "./driver";
+import { energyRing, glowPoints, haloShell, plasmaBarrier, softLight } from "./shaders";
+
+/**
+ * The circular particle accelerator. In "decorative" mode particles are
+ * spawned and resolved at random (the page labels this as a visual effect).
+ * In "live" mode nothing is invented: particles appear only when the page
+ * calls `launch()` for a real indexed event.
+ */
+export interface RingApi {
+  /** outcome "orbit" keeps circulating until it fades; "tunnel"/"reflect" resolve at the barrier. */
+  launch: (p: { color: string; outcome: "tunnel" | "reflect" | "orbit"; delay?: number }) => void;
+}
+
+export interface RingProps {
+  mode: "decorative" | "live";
+  apiRef?: Ref<RingApi>;
+  /** 0..1 scroll progress through the hero: drives the camera approach. */
+  scrollRef?: MutableRefObject<number>;
+  particles?: number;
+  dpr?: [number, number];
+  reducedMotion?: boolean;
+  className?: string;
+  /** Camera framing preset. */
+  framing?: "hero" | "panel";
+}
+
+const R = 4.2;
+const BARRIER_THETA = Math.PI * 0.36;
+const TRAIL = 10;
+const C = {
+  cyan: new THREE.Color("#00D9FF"),
+  ion: new THREE.Color("#2864FF"),
+  violet: new THREE.Color("#885BFF"),
+  flare: new THREE.Color("#EAFBFF"),
+  amber: new THREE.Color("#F0A64B"),
+};
+
+function glowMaterial(pixelRatio: number, scale = 260) {
+  return new THREE.ShaderMaterial({
+    vertexShader: glowPoints.vertex,
+    fragmentShader: glowPoints.fragment,
+    uniforms: { uPixelRatio: { value: pixelRatio }, uScale: { value: scale } },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+type PState = 0 | 1 | 2 | 3; // 0 dead, 1 circulating, 2 passed (tunneled), 3 reflected
+interface Pool {
+  theta: Float32Array;
+  speed: Float32Array;
+  dir: Float32Array;
+  y: Float32Array;
+  life: Float32Array;
+  state: Uint8Array;
+  outcome: Uint8Array; // 0 orbit, 1 tunnel, 2 reflect
+  laps: Float32Array;
+  delay: Float32Array;
+  color: Float32Array;
+  trail: Float32Array;
+}
+
+function makePool(n: number): Pool {
+  return {
+    theta: new Float32Array(n),
+    speed: new Float32Array(n),
+    dir: new Float32Array(n).fill(1),
+    y: new Float32Array(n),
+    life: new Float32Array(n),
+    state: new Uint8Array(n),
+    outcome: new Uint8Array(n),
+    laps: new Float32Array(n),
+    delay: new Float32Array(n),
+    color: new Float32Array(n * 3),
+    trail: new Float32Array(n * TRAIL * 3),
+  };
+}
+
+function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framing = "hero" }: RingProps) {
+  const { gl, camera, pointer, size } = useThree();
+  const pr = gl.getPixelRatio();
+  const pool = useMemo(() => makePool(particles), [particles]);
+  const impact = useRef({ t: -10, breach: 0 });
+  const arcs = useRef<{ t: number; seed: number }[]>([]);
+  const clock = useRef(0);
+  const spawnTimer = useRef(0);
+
+  // ---------------------------------------------------------------- materials
+  const ringMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: energyRing.vertex,
+        fragmentShader: energyRing.fragment,
+        uniforms: { uTime: { value: 0 }, uColor: { value: C.ion }, uHot: { value: C.cyan }, uIntensity: { value: 1 }, uSpeed: { value: 0.12 }, uPulses: { value: 6 } },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    [],
+  );
+  const haloMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: haloShell.vertex,
+        fragmentShader: haloShell.fragment,
+        uniforms: { uColor: { value: C.ion }, uIntensity: { value: 0.22 } },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+    [],
+  );
+  const barrierMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: plasmaBarrier.vertex,
+        fragmentShader: plasmaBarrier.fragment,
+        uniforms: {
+          uTime: { value: 0 },
+          uColorA: { value: C.violet },
+          uColorB: { value: C.ion },
+          uFlare: { value: C.flare },
+          uImpact: { value: new THREE.Vector3(0.5, 0.5, -10) },
+          uBreach: { value: 0 },
+          uIntensity: { value: 1 },
+          uDistort: { value: 1 },
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+    [],
+  );
+  const lightMats = useMemo(
+    () =>
+      [C.ion, C.violet, C.cyan].map(
+        (c, i) =>
+          new THREE.ShaderMaterial({
+            vertexShader: softLight.vertex,
+            fragmentShader: softLight.fragment,
+            uniforms: { uColor: { value: c }, uIntensity: { value: [0.16, 0.12, 0.1][i] } },
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          }),
+      ),
+    [],
+  );
+  const particleMat = useMemo(() => glowMaterial(pr, 440), [pr]);
+  const dustMat = useMemo(() => glowMaterial(pr, 90), [pr]);
+
+  // ---------------------------------------------------------------- geometry
+  const ringGeo = useMemo(() => new THREE.TorusGeometry(R, 0.05, 16, 320), []);
+  const haloGeo = useMemo(() => new THREE.TorusGeometry(R, 0.28, 24, 200), []);
+  const markGeo = useMemo(() => new THREE.TorusGeometry(R + 1.15, 0.006, 4, 256), []);
+  const railGeo = useMemo(() => new THREE.TorusGeometry(R, 0.012, 6, 256), []);
+  const innerGeo = useMemo(() => new THREE.TorusGeometry(R - 0.85, 0.006, 4, 256), []);
+  const spokeGeo = useMemo(() => new THREE.CylinderGeometry(0.012, 0.012, R - 0.5, 6, 1, true), []);
+
+  /** Dipole magnets as C-yokes: a jaw above and below the beam, which stays visible between them. */
+  const magnets = useMemo(() => {
+    const n = 72;
+    const geo = new THREE.BoxGeometry(0.42, 0.075, 0.12);
+    const mat = new THREE.MeshStandardMaterial({ color: "#121b27", metalness: 0.92, roughness: 0.32, emissive: "#071022", emissiveIntensity: 0.6 });
+    const mesh = new THREE.InstancedMesh(geo, mat, n * 2);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * Math.PI * 2;
+      if (Math.abs(((th - BARRIER_THETA + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.2) continue;
+      q.setFromEuler(new THREE.Euler(0, -th, 0));
+      for (const y of [0.13, -0.13]) {
+        m.compose(new THREE.Vector3(Math.cos(th) * R, y, Math.sin(th) * R), q, new THREE.Vector3(1, 1, 1));
+        mesh.setMatrixAt(k++, m);
+      }
+    }
+    mesh.count = k;
+    return mesh;
+  }, []);
+
+  const ticks = useMemo(() => {
+    const n = 120;
+    const geo = new THREE.BoxGeometry(0.012, 0.012, 0.22);
+    const mat = new THREE.MeshBasicMaterial({ color: "#2a3d55", transparent: true, opacity: 0.8 });
+    const mesh = new THREE.InstancedMesh(geo, mat, n);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * Math.PI * 2;
+      const len = i % 10 === 0 ? 2.2 : 1;
+      m.compose(new THREE.Vector3(Math.cos(th) * (R + 1.15), 0, Math.sin(th) * (R + 1.15)), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -th + Math.PI / 2, 0)), new THREE.Vector3(1, 1, len));
+      mesh.setMatrixAt(i, m);
+    }
+    return mesh;
+  }, []);
+
+  const particleGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    const n = particles * (TRAIL + 1);
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("aColor", new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("aSize", new THREE.BufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("aAlpha", new THREE.BufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage));
+    return g;
+  }, [particles]);
+
+  const dustGeo = useMemo(() => {
+    const n = Math.round(particles * 2.5);
+    const pos = new Float32Array(n * 3);
+    const col = new Float32Array(n * 3);
+    const size = new Float32Array(n);
+    const alpha = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const r = 2 + Math.random() * 9;
+      const th = Math.random() * Math.PI * 2;
+      pos.set([Math.cos(th) * r, (Math.random() - 0.5) * 5, Math.sin(th) * r], i * 3);
+      const c = [C.cyan, C.ion, C.violet][i % 3];
+      col.set([c.r, c.g, c.b], i * 3);
+      size[i] = 0.5 + Math.random() * 1.2;
+      alpha[i] = 0.12 + Math.random() * 0.25;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("aColor", new THREE.BufferAttribute(col, 3));
+    g.setAttribute("aSize", new THREE.BufferAttribute(size, 1));
+    g.setAttribute("aAlpha", new THREE.BufferAttribute(alpha, 1));
+    return g;
+  }, [particles]);
+
+  /** A few large, faint glow points around the quantum core. */
+  const coreGlowGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0, 0, 0, 0, 0, 0.02, 0]), 3));
+    g.setAttribute("aColor", new THREE.BufferAttribute(new Float32Array([0.92, 0.98, 1, 0, 0.85, 1, 0.16, 0.39, 1]), 3));
+    g.setAttribute("aSize", new THREE.BufferAttribute(new Float32Array([6, 14, 30]), 1));
+    g.setAttribute("aAlpha", new THREE.BufferAttribute(new Float32Array([0.9, 0.35, 0.18]), 1));
+    return g;
+  }, []);
+
+  const arcGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 12 * 2 * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    return g;
+  }, []);
+  const arcMat = useMemo(() => new THREE.LineBasicMaterial({ color: C.flare, transparent: true, opacity: 0.0, blending: THREE.AdditiveBlending, depthWrite: false }), []);
+
+  useEffect(
+    () => () => {
+      [ringMat, haloMat, barrierMat, particleMat, dustMat, arcMat, ...lightMats].forEach((m) => m.dispose());
+      [ringGeo, haloGeo, markGeo, railGeo, innerGeo, spokeGeo, particleGeo, dustGeo, arcGeo, coreGlowGeo].forEach((g) => g.dispose());
+      magnets.geometry.dispose();
+      (magnets.material as THREE.Material).dispose();
+      ticks.geometry.dispose();
+      (ticks.material as THREE.Material).dispose();
+    },
+    [ringMat, haloMat, barrierMat, particleMat, dustMat, arcMat, lightMats, ringGeo, haloGeo, markGeo, railGeo, innerGeo, spokeGeo, particleGeo, dustGeo, arcGeo, coreGlowGeo, magnets, ticks],
+  );
+
+  // ---------------------------------------------------------------- spawning
+  const spawn = (color: THREE.Color, outcome: 0 | 1 | 2, delay = 0) => {
+    for (let i = 0; i < particles; i++) {
+      if (pool.state[i] !== 0) continue;
+      pool.state[i] = 1;
+      pool.theta[i] = BARRIER_THETA + 0.4 + Math.random() * 0.3;
+      pool.speed[i] = 0.55 + Math.random() * 0.45;
+      pool.dir[i] = 1;
+      pool.y[i] = (Math.random() - 0.5) * 0.12;
+      pool.life[i] = 1;
+      pool.outcome[i] = outcome;
+      pool.laps[i] = outcome === 0 ? 1.2 + Math.random() : 0.75 + Math.random() * 0.5;
+      pool.delay[i] = delay;
+      pool.color.set([color.r, color.g, color.b], i * 3);
+      for (let k = 0; k < TRAIL; k++) pool.trail.set([NaN, 0, 0], (i * TRAIL + k) * 3);
+      return;
+    }
+  };
+
+  // Reduced motion: a still composition of particles spread around the ring instead of a stream.
+  useEffect(() => {
+    if (!reducedMotion || mode !== "decorative") return;
+    for (let i = 0; i < Math.min(28, particles); i++) {
+      spawn([C.cyan, C.ion, C.violet][i % 3], 0);
+      pool.theta[i] = (i / 28) * Math.PI * 2;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedMotion, mode]);
+
+  useImperativeHandle(apiRef, () => ({
+    launch: ({ color, outcome, delay }) => spawn(new THREE.Color(color), outcome === "orbit" ? 0 : outcome === "tunnel" ? 1 : 2, delay ?? 0),
+  }));
+
+  const barrierPos = new THREE.Vector3(Math.cos(BARRIER_THETA) * R, 0, Math.sin(BARRIER_THETA) * R);
+  const tmp = useMemo(() => new THREE.Vector3(), []);
+  const camTarget = useMemo(() => new THREE.Vector3(), []);
+  const spokes = useMemo(() => Array.from({ length: 6 }, (_, i) => (i / 6) * Math.PI * 2 + 0.3), []);
+  const lightRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const markRef = useRef<THREE.Mesh>(null);
+  const innerRef = useRef<THREE.Mesh>(null);
+  const ticksRef = useRef<THREE.Group>(null);
+  const coreRef = useRef<THREE.Mesh>(null);
+  const dustRef = useRef<THREE.Points>(null);
+  const narrow = size.width < 640;
+
+  useFrame((state, rawDt) => {
+    const dt = reducedMotion ? 0 : Math.min(rawDt, 1 / 30);
+    clock.current += dt;
+    const t = clock.current;
+    ringMat.uniforms.uTime.value = t;
+    barrierMat.uniforms.uTime.value = t;
+
+    // Camera: base framing, pointer parallax, scroll-driven approach toward the barrier.
+    const s = scrollRef?.current ?? 0;
+    const base = framing === "hero" ? (narrow ? new THREE.Vector3(0, 6.5, 15.5) : new THREE.Vector3(-0.5, 4.4, 14.2)) : new THREE.Vector3(0, 5.2, 12.5);
+    const near = new THREE.Vector3(barrierPos.x * 1.85 + 1.2, 1.1, barrierPos.z * 1.85 + 1.5);
+    tmp.copy(base).lerp(near, s * 0.85);
+    tmp.x += pointer.x * 0.7 * (1 - s);
+    tmp.y += pointer.y * 0.45 * (1 - s);
+    camera.position.lerp(tmp, reducedMotion ? 1 : 0.06);
+    // Wide screens: frame the ring up and to the right, leaving room for the headline.
+    if (framing === "hero" && size.width >= 1024) camTarget.set(-3.4, -1.0, 0.6);
+    else if (framing === "hero") camTarget.set(0, -0.6, 0);
+    else camTarget.set(0, 0, 0);
+    camTarget.lerp(barrierPos, s);
+    camera.lookAt(camTarget);
+
+    // Rotating magnetic structures.
+    if (markRef.current) markRef.current.rotation.z += dt * 0.03;
+    if (innerRef.current) innerRef.current.rotation.z -= dt * 0.05;
+    if (ticksRef.current) ticksRef.current.rotation.y += dt * 0.025;
+    if (dustRef.current) dustRef.current.rotation.y += dt * 0.012;
+    if (coreRef.current) coreRef.current.scale.setScalar(1 + Math.sin(t * 2.2) * 0.06);
+    lightRefs.current.forEach((m) => m?.quaternion.copy(camera.quaternion));
+
+    // Decorative mode: keep a steady stream, resolved at random (visual effect only).
+    if (mode === "decorative" && !reducedMotion) {
+      spawnTimer.current -= dt;
+      if (spawnTimer.current <= 0) {
+        spawnTimer.current = 0.07 + Math.random() * 0.12;
+        const c = [C.cyan, C.ion, C.violet][Math.floor(Math.random() * 3)];
+        spawn(c, Math.random() < 0.38 ? 1 : 2);
+      }
+    }
+
+    // Impact / breach decay.
+    impact.current.breach = Math.max(0, impact.current.breach - dt * 1.8);
+    barrierMat.uniforms.uBreach.value = impact.current.breach;
+
+    // ---- particles
+    const pos = particleGeo.attributes.position.array as Float32Array;
+    const col = particleGeo.attributes.aColor.array as Float32Array;
+    const siz = particleGeo.attributes.aSize.array as Float32Array;
+    const alp = particleGeo.attributes.aAlpha.array as Float32Array;
+    for (let i = 0; i < particles; i++) {
+      const base3 = i * (TRAIL + 1);
+      if (pool.state[i] === 0) {
+        for (let k = 0; k <= TRAIL; k++) alp[base3 + k] = 0;
+        continue;
+      }
+      if (pool.delay[i] > 0) {
+        pool.delay[i] -= dt;
+        for (let k = 0; k <= TRAIL; k++) alp[base3 + k] = 0;
+        continue;
+      }
+      const prev = pool.theta[i];
+      pool.theta[i] += pool.dir[i] * pool.speed[i] * dt * (pool.state[i] === 3 ? 0.55 : 1);
+      if (pool.state[i] === 1) {
+        // Crossing the barrier angle (mod 2π) resolves the particle.
+        const crossed = Math.floor((prev - BARRIER_THETA) / (Math.PI * 2)) !== Math.floor((pool.theta[i] - BARRIER_THETA) / (Math.PI * 2));
+        if (crossed) {
+          pool.laps[i] -= 1;
+          if (pool.laps[i] <= 0 && pool.outcome[i] !== 0) {
+            const y = 0.5 + pool.y[i] * 2;
+            if (pool.outcome[i] === 1) {
+              pool.state[i] = 2;
+              impact.current.breach = 1;
+              pool.color.set([C.flare.r, C.flare.g, C.flare.b], i * 3);
+            } else {
+              pool.state[i] = 3;
+              pool.dir[i] = -1;
+              pool.color.set([C.amber.r, C.amber.g, C.amber.b], i * 3);
+            }
+            barrierMat.uniforms.uImpact.value.set(0.5, y, t);
+            if (arcs.current.length < 3 && Math.random() < 0.5) arcs.current.push({ t, seed: Math.random() * 1000 });
+          } else if (pool.laps[i] <= 0) {
+            pool.state[i] = 2;
+          }
+        }
+      } else {
+        pool.life[i] -= dt * (pool.state[i] === 3 ? 0.9 : 0.45);
+        if (pool.life[i] <= 0) pool.state[i] = 0;
+      }
+      const th = pool.theta[i];
+      const wobble = Math.sin(t * 9 + i) * 0.015;
+      const x = Math.cos(th) * (R + wobble);
+      const z = Math.sin(th) * (R + wobble);
+      const y = pool.y[i] + wobble;
+      // shift trail
+      const tb = i * TRAIL * 3;
+      pool.trail.copyWithin(tb + 3, tb, tb + (TRAIL - 1) * 3);
+      pool.trail[tb] = x;
+      pool.trail[tb + 1] = y;
+      pool.trail[tb + 2] = z;
+      const life = Math.max(0, pool.life[i]);
+      const cr = pool.color[i * 3], cg = pool.color[i * 3 + 1], cb = pool.color[i * 3 + 2];
+      pos.set([x, y, z], base3 * 3);
+      col.set([cr, cg, cb], base3 * 3);
+      siz[base3] = pool.state[i] === 2 ? 3.2 : 2.4;
+      alp[base3] = life;
+      for (let k = 0; k < TRAIL; k++) {
+        const j = base3 + 1 + k;
+        const tx = pool.trail[tb + k * 3];
+        if (Number.isNaN(tx)) {
+          alp[j] = 0;
+          continue;
+        }
+        pos.set([tx, pool.trail[tb + k * 3 + 1], pool.trail[tb + k * 3 + 2]], j * 3);
+        col.set([cr, cg, cb], j * 3);
+        siz[j] = 2.1 * (1 - k / TRAIL);
+        alp[j] = life * 0.7 * (1 - k / TRAIL);
+      }
+    }
+    particleGeo.attributes.position.needsUpdate = true;
+    particleGeo.attributes.aColor.needsUpdate = true;
+    particleGeo.attributes.aSize.needsUpdate = true;
+    particleGeo.attributes.aAlpha.needsUpdate = true;
+
+    // ---- electrical arcs at the barrier
+    arcs.current = arcs.current.filter((a) => t - a.t < 0.35);
+    const ap = arcGeo.attributes.position.array as Float32Array;
+    ap.fill(0);
+    arcs.current.forEach((a, n) => {
+      let px = barrierPos.x, py = 0.9, pz = barrierPos.z;
+      for (let k = 0; k < 12; k++) {
+        const s1 = Math.sin(a.seed + k * 12.9898) * 43758.5453;
+        const jitter = (s1 - Math.floor(s1) - 0.5) * 0.35;
+        const nx = barrierPos.x + jitter, ny = 0.9 - (k + 1) * 0.15, nz = barrierPos.z + jitter * 0.6;
+        ap.set([px, py, pz, nx, ny, nz], (n * 12 + k) * 6);
+        px = nx; py = ny; pz = nz;
+      }
+    });
+    arcGeo.attributes.position.needsUpdate = true;
+    arcMat.opacity = arcs.current.length ? 0.85 : 0;
+  });
+
+  const barrierQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -BARRIER_THETA, 0));
+
+  return (
+    <>
+      <fog attach="fog" args={["#05070B", 12, 30]} />
+      <ambientLight intensity={0.12} />
+      <directionalLight position={[-4, 8, -6]} intensity={0.9} color="#9fdcff" />
+      <pointLight position={[0, 0.6, 0]} intensity={4.5} distance={9} decay={1.6} color="#2864FF" />
+      <pointLight position={[barrierPos.x, 1.0, barrierPos.z]} intensity={5} distance={4.5} decay={1.6} color="#885BFF" />
+
+      {/* atmospheric light volumes */}
+      {lightMats.map((m, i) => (
+        <mesh key={i} ref={(el) => void (lightRefs.current[i] = el)} material={m} position={[[0, 0, 0], [barrierPos.x, 0.5, barrierPos.z], [-2, -0.5, -3]][i] as [number, number, number]}>
+          <planeGeometry args={[[20, 7, 12][i], [20, 7, 12][i]]} />
+        </mesh>
+      ))}
+
+      <group rotation={[0, 0, 0]}>
+        {/* main ring + halo */}
+        <mesh geometry={ringGeo} material={ringMat} rotation={[Math.PI / 2, 0, 0]} />
+        <mesh geometry={haloGeo} material={haloMat} rotation={[Math.PI / 2, 0, 0]} />
+        {/* vacuum chamber rails */}
+        {[0.075, -0.075].map((y) => (
+          <mesh key={y} geometry={railGeo} rotation={[Math.PI / 2, 0, 0]} position={[0, y, 0]}>
+            <meshStandardMaterial color="#1b2838" metalness={0.95} roughness={0.25} />
+          </mesh>
+        ))}
+        {/* magnets (dipoles) */}
+        <primitive object={magnets} />
+        {/* markings */}
+        <mesh ref={markRef} geometry={markGeo} rotation={[Math.PI / 2, 0, 0]}>
+          <meshBasicMaterial color="#1f3247" transparent opacity={0.9} />
+        </mesh>
+        <mesh ref={innerRef} geometry={innerGeo} rotation={[Math.PI / 2, 0, 0]}>
+          <meshBasicMaterial color="#182638" transparent opacity={0.9} />
+        </mesh>
+        <group ref={ticksRef}>
+          <primitive object={ticks} />
+        </group>
+        {/* energy conduits from the quantum core */}
+        {spokes.map((th, i) => (
+          <mesh key={i} geometry={spokeGeo} material={ringMat} position={[Math.cos(th) * (R / 2), -0.02, Math.sin(th) * (R / 2)]} rotation={[0, -th, Math.PI / 2]} />
+        ))}
+        <mesh ref={coreRef}>
+          <sphereGeometry args={[0.09, 32, 16]} />
+          <meshBasicMaterial color="#EAFBFF" />
+        </mesh>
+        <points geometry={coreGlowGeo} material={dustMat} />
+        {/* the potential barrier */}
+        {/* barrier volume of width a: entry and exit faces, emitter pylons */}
+        <group position={barrierPos} quaternion={barrierQuat}>
+          {[-0.18, 0.18].map((x) => (
+            <mesh key={x} material={barrierMat} position={[0, 0, x]}>
+              <planeGeometry args={[1.5, 2.4, 1, 1]} />
+            </mesh>
+          ))}
+          {[-0.78, 0.78].map((x) => (
+            <mesh key={x} position={[x, 0, 0]}>
+              <boxGeometry args={[0.07, 2.5, 0.42]} />
+              <meshStandardMaterial color="#1a2433" metalness={0.95} roughness={0.28} emissive="#1d1150" emissiveIntensity={0.45} />
+            </mesh>
+          ))}
+        </group>
+        <mesh position={[barrierPos.x, 1.25, barrierPos.z]} quaternion={barrierQuat}>
+          <boxGeometry args={[1.8, 0.06, 0.12]} />
+          <meshStandardMaterial color="#121c29" metalness={0.9} roughness={0.3} emissive="#2a1a55" emissiveIntensity={0.8} />
+        </mesh>
+        <mesh position={[barrierPos.x, -1.25, barrierPos.z]} quaternion={barrierQuat}>
+          <boxGeometry args={[1.8, 0.06, 0.12]} />
+          <meshStandardMaterial color="#121c29" metalness={0.9} roughness={0.3} emissive="#2a1a55" emissiveIntensity={0.8} />
+        </mesh>
+        <lineSegments geometry={arcGeo} material={arcMat} />
+        <points geometry={particleGeo} material={particleMat} frustumCulled={false} />
+        <points ref={dustRef} geometry={dustGeo} material={dustMat} />
+      </group>
+    </>
+  );
+}
+
+export default function AcceleratorRing(props: RingProps) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(true);
+  const timer = useTimerDriven();
+  useEffect(() => {
+    if (!wrap.current) return;
+    // Stop rendering while scrolled out of view (and while the tab is hidden).
+    const io = new IntersectionObserver(([e]) => setActive(e.isIntersecting), { rootMargin: "100px" });
+    io.observe(wrap.current);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={wrap} className={props.className} aria-hidden="true">
+      <Canvas
+        frameloop={active && !timer ? "always" : "never"}
+        dpr={props.dpr ?? [1, 1.75]}
+        gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
+        camera={{ position: [0, 3.6, 11.8], fov: 40, near: 0.1, far: 80 }}
+      >
+        {timer && <TimerDriver active={active} />}
+        <Scene {...props} />
+      </Canvas>
+    </div>
+  );
+}

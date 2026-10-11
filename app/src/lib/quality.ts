@@ -37,7 +37,8 @@ export function useQuality(): Quality {
       const tier: QualityTier = mobile || cores <= 4 || memory <= 4 ? (mobile && cores <= 4 ? "low" : "medium") : "high";
       setQ({
         webgl: detectWebGL(),
-        reducedMotion: mq.matches,
+        // `?motion=force` overrides the OS setting (for testing and screenshots).
+        reducedMotion: mq.matches && !new URLSearchParams(window.location.search).has("motion"),
         tier,
         dpr: tier === "high" ? [1, 1.75] : tier === "medium" ? [1, 1.5] : [1, 1.25],
         mobile,

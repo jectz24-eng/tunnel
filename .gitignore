@@ -24,3 +24,7 @@ id.json
 .pgdata/
 packages/db/src/generated/
 .scratch/
+
+# local screenshot tooling
+*.tmp.mjs
+app/shots/

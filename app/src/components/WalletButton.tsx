@@ -34,7 +34,7 @@ export function WalletButton({ className }: { className?: string }) {
   if (!connected || !publicKey) {
     return (
       <>
-        <Button variant="primary" size="sm" className={className} onClick={() => setPickerOpen(true)} disabled={connecting}>
+        <Button variant="primary" size="sm" className={cx("whitespace-nowrap", className)} onClick={() => setPickerOpen(true)} disabled={connecting}>
           {connecting ? "Connecting…" : "Connect Wallet"}
         </Button>
         <WalletPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
@@ -47,11 +47,11 @@ export function WalletButton({ className }: { className?: string }) {
     <div className={cx("relative", className)} ref={menuRef}>
       <button
         onClick={() => setMenuOpen((o) => !o)}
-        className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-panel-2 px-3 font-mono text-[12px] text-fg hover:border-muted/50"
+        className="flex h-8 items-center gap-2 whitespace-nowrap rounded-[10px] border border-line bg-panel-2 px-3 font-mono text-[12px] text-fg hover:border-muted/50"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
       >
-        <span className="size-1.5 rounded-full bg-green shadow-[0_0_8px_#45E6B0]" />
+        <span className="size-1.5 rounded-full bg-cyan shadow-[0_0_8px_#00D9FF]" />
         {shortKey(key)}
         {balances.data && <span className="hidden text-muted sm:inline">{formatSol(balances.data.lamports, 3)} SOL</span>}
       </button>
@@ -88,8 +88,11 @@ export function WalletButton({ className }: { className?: string }) {
             <MenuItem onClick={() => void auth.signIn()} disabled={auth.status === "verified" || auth.status === "signing"}>
               {auth.status === "verified" ? "Wallet ownership verified" : auth.status === "signing" ? "Waiting for signature…" : "Verify wallet ownership"}
             </MenuItem>
-            <Link href="/dashboard" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
-              Dashboard
+            <Link href={`/profile/${key}`} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
+              My experiments
+            </Link>
+            <Link href="/accelerator#claims" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
+              Claim rewards
             </Link>
             <a href={explorerAddress(key)} target="_blank" rel="noreferrer" className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
               View on Explorer
