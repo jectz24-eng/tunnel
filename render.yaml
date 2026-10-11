@@ -1,0 +1,65 @@
+# Render Blueprint for TUNNEL: website + keeper (crank & indexer) + PostgreSQL.
+# Deploy: push this repo to GitHub/GitLab, then Render → New → Blueprint → select the repo.
+#
+# Values marked `sync: false` are entered in the Render dashboard (never committed).
+# The keeper's keypair is uploaded as a Secret File named keeper.json.
+#
+# Mainnet mining stays DISABLED in the UI until NEXT_PUBLIC_MAINNET_DEPOSITS_ENABLED is set
+# to "true" (see docs/CHECKLIST.md: audit, tokenomics, legal review, multisig authorities).
+
+databases:
+  - name: tunnel-db
+    plan: basic-256mb
+    databaseName: tunnel
+    user: tunnel
+
+services:
+  - type: web
+    name: tunnel-web
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build -w app
+    preDeployCommand: npx --workspace packages/db prisma migrate deploy
+    startCommand: npm run start -w app
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tunnel-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: NEXT_PUBLIC_CLUSTER
+        value: mainnet-beta
+      # A dedicated mainnet RPC (Helius, Triton, QuickNode…). The public endpoint is rate limited.
+      - key: NEXT_PUBLIC_RPC_URL
+        sync: false
+      - key: SOLANA_RPC_URL
+        sync: false
+      - key: NEXT_PUBLIC_MAINNET_DEPOSITS_ENABLED
+        value: "false"
+
+  - type: worker
+    name: tunnel-keeper
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run keeper
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tunnel-db
+          property: connectionString
+      - key: SOLANA_RPC_URL
+        sync: false
+      - key: SOLANA_WS_URL
+        sync: false
+      # Upload the keeper hot-wallet keypair as Secret File "keeper.json" (holds only SOL for cycle rent + ORAO fees).
+      - key: KEEPER_KEYPAIR
+        value: /etc/secrets/keeper.json
+      - key: LOG_LEVEL
+        value: info
