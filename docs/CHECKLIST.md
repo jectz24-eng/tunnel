@@ -7,7 +7,7 @@ Status legend: ✅ done and verified in this repo · ⬜ not done · ⛔ blocked
 - ✅ Rust unit tests (`cargo test -p tunnel --lib`): physics vs 50-digit reference, odds monotonicity & calibration, draw known vector, emissions, overflow
 - ✅ Localnet integration suite (`anchor test`, 28 tests): init auth, physics-derived odds equal SDK exactly, energy limits, gatekeeper, pause, snapshots, late deployment, VRF request/reveal, settlement vs SDK, cap scaling, void + late fulfilment, fulfilled-randomness cannot be voided, reserve cap, double-claim, admin transfer, vault exits
 - ✅ Full-stack localnet run (keeper + indexer + ORAO program + fulfiller + app): `docs/LOCALNET_RUN.md`
-- ⬜ Devnet deployment and `docs/DEVNET_RUN.md` with the live ORAO network (needs ≈ 4.5 devnet SOL for the operator; see DEPLOYMENT.md §2)
+- ⛔ Devnet deployment and `docs/DEVNET_RUN.md` with the live ORAO network — blocked: the CLI faucet rate-limited the operator wallet `8QWtnT8AaHdcmyAiNvZscd4Ebah4JZdsZNXisKjnUdbx`; fund it with ≈ 5 devnet SOL at https://faucet.solana.com, then follow DEPLOYMENT.md §2
 - ⬜ Fuzzing (e.g. Trident) of deploy/settle/claim
 - ⬜ Compute profile of `settle_position` at the 250-particle maximum on devnet
 - ⛔ **Independent security audit** (blocking for mainnet)
