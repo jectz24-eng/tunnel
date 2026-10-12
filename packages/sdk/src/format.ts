@@ -36,3 +36,17 @@ export function parseSolToLamports(input: string): bigint | null {
 
 export const shortKey = (key: string, n = 4) => (key.length <= n * 2 + 1 ? key : `${key.slice(0, n)}…${key.slice(-n)}`);
 
+
+/** "12.5" → base units (6 decimals); null if malformed. */
+export function parseTunnel(input: string): bigint | null {
+  const m = /^\s*(\d{1,15})(?:\.(\d{0,6}))?\s*$/.exec(input);
+  if (!m) return null;
+  return BigInt(m[1]) * 10n ** BigInt(TUNNEL_DECIMALS) + BigInt((m[2] ?? "").padEnd(TUNNEL_DECIMALS, "0") || "0");
+}
+
+/** Base units → plain decimal string without grouping ("12.5"), for signed messages and inputs. */
+export function tunnelToPlain(units: bigint): string {
+  const base = 10n ** BigInt(TUNNEL_DECIMALS);
+  const frac = (units % base).toString().padStart(TUNNEL_DECIMALS, "0").replace(/0+$/, "");
+  return `${units / base}${frac ? "." + frac : ""}`;
+}

@@ -11,6 +11,7 @@ import { getDb } from "@tunnel/db";
 import { createServer } from "node:http";
 import { config } from "./config";
 import { cycleTick } from "./cycles";
+import { scanDeposits } from "./deposits";
 import { log } from "./log";
 import { reconcileSending, resolveTokenProgram, sendRequested, type PayoutContext } from "./payouts";
 
@@ -43,11 +44,20 @@ async function main() {
   await ensureConfig(db);
   log.info({ rpc: config.rpcUrl, rewardWallet: config.rewardWallet?.publicKey.toBase58() ?? null, mint: config.tunnelMint?.toBase58() ?? null }, "engine starting");
 
-  every("cycles", config.tickMs, async () => {
-    const r = await cycleTick(conn, db, config.voidAfterMs);
-    health.lastCycleTick = Date.now();
-    health.cycle = r.open;
-  });
+  if (config.enableCycles) {
+    every("cycles", config.tickMs, async () => {
+      const r = await cycleTick(conn, db, config.voidAfterMs);
+      health.lastCycleTick = Date.now();
+      health.cycle = r.open;
+    });
+  } else {
+    // Liveness for the web app (and the latest slot) without running mining cycles.
+    every("heartbeat", config.tickMs, async () => {
+      const slot = BigInt(await conn.getSlot("confirmed"));
+      await db.protocolConfig.update({ where: { id: 1 }, data: { lastSlot: slot, engineHeartbeat: new Date() } });
+      health.lastCycleTick = Date.now();
+    });
+  }
 
   if (!config.rewardWallet || !config.tunnelMint) {
     log.warn("REWARD_WALLET_KEYPAIR or TUNNEL_MINT not set: payouts disabled (claims will queue)");
@@ -69,6 +79,7 @@ async function main() {
       health.lastPayoutTick = Date.now();
     });
     every("balances", config.balanceTickMs, () => publishBalances(ctx.wallet.publicKey, ctx.mint, tokenProgram));
+    every("deposits", config.depositTickMs, () => scanDeposits({ conn, db, house: ctx.wallet.publicKey, mint: ctx.mint, tokenProgram }));
   }
 
   createServer((req, res) => {

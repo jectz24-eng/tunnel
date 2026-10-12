@@ -6,3 +6,4 @@ export * from "./fairness";
 export * from "./format";
 export * from "./verify";
 export * from "./serde";
+export * from "./casino";

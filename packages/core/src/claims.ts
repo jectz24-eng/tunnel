@@ -77,7 +77,7 @@ export async function confirmPayout(db: Db, id: bigint, now = new Date()) {
     const cycles = (await tx.position.findMany({ where: { payoutId: id }, select: { cycleId: true } })).map((r) => r.cycleId);
     await tx.experiment.updateMany({ where: { wallet: p.wallet, cycleId: { in: cycles }, status: "settled" }, data: { status: "claimed" } });
     await tx.protocolEvent.create({
-      data: { name: "RewardClaimed", wallet: p.wallet, data: { payoutId: id.toString(), amount: p.amount.toString(), txSignature: p.txSignature, cycles: cycles.map(String) } },
+      data: { name: p.kind === "withdrawal" ? "Withdrawal" : "RewardClaimed", wallet: p.wallet, data: { payoutId: id.toString(), amount: p.amount.toString(), txSignature: p.txSignature, cycles: cycles.map(String) } },
     });
     return p;
   });
@@ -88,14 +88,18 @@ export async function resetExpiredPayout(db: Db, id: bigint, note: string) {
   await db.payout.updateMany({ where: { id, status: "sending" }, data: { status: "requested", txSignature: null, lastValidBlockHeight: null, error: note } });
 }
 
-/** A transfer failed on-chain: return the amount to the wallet's claimable balance. */
+/** A transfer failed on-chain: return the amount to the wallet's claimable rewards or casino balance. */
 export async function failPayout(db: Db, id: bigint, error: string) {
   return db.$transaction(async (tx) => {
     const p = await tx.payout.findUnique({ where: { id } });
     if (!p || (p.status !== "sending" && p.status !== "requested")) return false;
     await tx.payout.update({ where: { id }, data: { status: "failed", error } });
-    await tx.position.updateMany({ where: { payoutId: id }, data: { payoutId: null } });
-    await tx.protocolEvent.create({ data: { name: "ClaimFailed", wallet: p.wallet, data: { payoutId: id.toString(), amount: p.amount.toString(), error } } });
+    if (p.kind === "withdrawal") {
+      await tx.account.update({ where: { wallet: p.wallet }, data: { balance: { increment: p.amount }, withdrawn: { decrement: p.amount } } });
+    } else {
+      await tx.position.updateMany({ where: { payoutId: id }, data: { payoutId: null } });
+    }
+    await tx.protocolEvent.create({ data: { name: p.kind === "withdrawal" ? "WithdrawalFailed" : "ClaimFailed", wallet: p.wallet, data: { payoutId: id.toString(), amount: p.amount.toString(), error } } });
     return true;
   });
 }

@@ -36,6 +36,14 @@ model ProtocolConfig {
   rewardWalletLamports BigInt?
   lastSlot          BigInt?
   engineHeartbeat   DateTime?
+  /** Betting limits (base units). New bets are refused while bettingPaused. */
+  minBet            BigInt   @default(1000000)
+  maxBet            BigInt   @default(1000000000)
+  /** A bet's maximum possible payout may not exceed this share (bps) of the free bankroll. */
+  maxWinBps         Int      @default(500)
+  bettingPaused     Boolean  @default(true)
+  /** Newest house-account signature already scanned for deposits. */
+  depositCursor     String?
   updatedAt         DateTime @updatedAt
 }
 
@@ -147,6 +155,8 @@ model Experiment {
 /// A transfer of $TUNNEL from the reward wallet to a claimant.
 model Payout {
   id                   BigInt    @id @default(autoincrement())
+  /** "claim" (mining rewards) or "withdrawal" (casino balance). */
+  kind                 String    @default("claim")
   wallet               String
   amount               BigInt
   /// requested → sending → confirmed | failed (amount returned to claimable)
@@ -234,4 +244,73 @@ model UsedNonce {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/** A player's casino balance and lifetime totals (base units). */
+model Account {
+  wallet            String   @id
+  balance           BigInt   @default(0)
+  deposited         BigInt   @default(0)
+  withdrawn         BigInt   @default(0)
+  wagered           BigInt   @default(0)
+  returned          BigInt   @default(0)
+  bets              Int      @default(0)
+  particles         Int      @default(0)
+  hits              Int      @default(0)
+  biggestWin        BigInt   @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([wagered])
+  @@index([biggestWin])
+  @@index([returned])
+}
+
+/** Provably-fair seeds: the server seed stays secret (only its hash is shown) until the player rotates. */
+model SeedPair {
+  id             BigInt    @id @default(autoincrement())
+  wallet         String
+  serverSeed     String
+  serverSeedHash String
+  clientSeed     String
+  nonce          Int       @default(0)
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  revealedAt     DateTime?
+
+  @@index([wallet, active])
+}
+
+model Bet {
+  id            BigInt   @id @default(autoincrement())
+  wallet        String
+  seedPairId    BigInt
+  nonce         Int
+  volatility    Int
+  /** Stake per particle. */
+  amount        BigInt
+  count         Int
+  winPpb        Int
+  multiplierBps Int
+  wins          Int
+  payout        BigInt
+  outcomeBits   String
+  createdAt     DateTime @default(now())
+
+  @@unique([seedPairId, nonce])
+  @@index([wallet, id])
+  @@index([payout])
+  @@index([createdAt])
+}
+
+/** An on-chain $TUNNEL transfer into the house account, credited once. */
+model Deposit {
+  id          BigInt   @id @default(autoincrement())
+  wallet      String
+  amount      BigInt
+  txSignature String   @unique
+  slot        BigInt
+  createdAt   DateTime @default(now())
+
+  @@index([wallet])
 }

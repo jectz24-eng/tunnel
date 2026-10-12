@@ -18,7 +18,10 @@ export const config = {
   tunnelMint: process.env.TUNNEL_MINT ? new PublicKey(process.env.TUNNEL_MINT) : null,
   tickMs: Number(process.env.ENGINE_TICK_MS ?? 2_000),
   payoutTickMs: Number(process.env.ENGINE_PAYOUT_TICK_MS ?? 4_000),
-  balanceTickMs: Number(process.env.ENGINE_BALANCE_TICK_MS ?? 30_000),
+  balanceTickMs: Number(process.env.ENGINE_BALANCE_TICK_MS ?? 10_000),
+  depositTickMs: Number(process.env.ENGINE_DEPOSIT_TICK_MS ?? 3_000),
+  /** Mining cycles (the original free-energy game). Off: the accelerator runs instant bets. */
+  enableCycles: process.env.ENGINE_CYCLES === "true",
   /** A closed cycle whose entropy block still cannot be read after this long is voided. */
   voidAfterMs: Number(process.env.ENGINE_VOID_AFTER_MS ?? 60 * 60_000),
   /** Safety cap in whole $TUNNEL: larger payouts wait for an operator (docs/SECURITY.md). */
