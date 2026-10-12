@@ -383,9 +383,9 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
     }
   };
 
-  // Reduced motion: a still composition of particles spread around the ring instead of a stream.
+  // Start with particles already spread around the ring, so the first frame looks alive.
   useEffect(() => {
-    if (!reducedMotion || mode !== "decorative") return;
+    if (mode !== "decorative") return;
     for (let i = 0; i < Math.min(28, particles); i++) {
       spawn([C.cyan, C.ion, C.violet][i % 3], 0);
       pool.theta[i] = (i / 28) * Math.PI * 2;
@@ -435,7 +435,8 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
   }, []);
 
   useFrame((state, rawDt) => {
-    const dt = reducedMotion ? 0 : Math.min(rawDt, 1 / 30);
+    // Reduced motion = a calmer scene (slower, no camera sway), not a frozen one.
+    const dt = Math.min(rawDt, 1 / 30) * (reducedMotion ? 0.45 : 1);
     clock.current += dt;
     const t = clock.current;
     ringMat.uniforms.uTime.value = t;
@@ -464,7 +465,7 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
     }
     // Slow drift around the machine so the scene never sits still.
     if (!reducedMotion) wantPos.applyAxisAngle(Y_AXIS, framing === "hero" ? Math.sin(t * 0.09) * 0.16 : t * 0.045);
-    const follow = reducedMotion ? 1 : 1 - Math.exp(-frameDt * 6);
+    const follow = 1 - Math.exp(-frameDt * 6);
     camera.position.lerp(wantPos, follow);
     if (!curTarget.current) curTarget.current = wantTarget.clone();
     curTarget.current.lerp(wantTarget, follow);
@@ -508,7 +509,7 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
     lightRefs.current.forEach((m) => m?.quaternion.copy(camera.quaternion));
 
     // Decorative mode: keep a steady stream, resolved at random (visual effect only).
-    if (mode === "decorative" && !reducedMotion) {
+    if (mode === "decorative") {
       spawnTimer.current -= dt;
       if (spawnTimer.current <= 0) {
         spawnTimer.current = 0.07 + Math.random() * 0.12;
@@ -626,7 +627,7 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
         pl.mesh.position.set(0, 0, 0);
         pl.mesh.rotation.set(Math.PI / 2, 0, 0);
         pl.mesh.scale.setScalar(0.2 + u * (R - 0.1));
-        m.opacity = reducedMotion ? 0 : 0.55 * Math.sin(u * Math.PI) * (1 - u * 0.5);
+        m.opacity = (reducedMotion ? 0.3 : 0.55) * Math.sin(u * Math.PI) * (1 - u * 0.5);
       } else {
         const u = (t - pl.t0) / 1.1;
         pl.mesh.position.copy(barrierPos).setY(0);
@@ -646,7 +647,7 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
       mp[i * 3] = Math.cos(ang) * r;
       mp[i * 3 + 1] = u * 3.2 - 0.2;
       mp[i * 3 + 2] = Math.sin(ang) * r;
-      ma[i] = reducedMotion ? 0 : Math.sin(u * Math.PI) * 0.7;
+      ma[i] = Math.sin(u * Math.PI) * (reducedMotion ? 0.45 : 0.7);
     }
     moteGeo.attributes.position.needsUpdate = true;
     moteGeo.attributes.aAlpha.needsUpdate = true;

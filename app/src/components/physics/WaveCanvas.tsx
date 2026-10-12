@@ -133,7 +133,8 @@ export function WaveCanvas({ e, v0, a, components = false, density = true, class
       ctx.fillText(`E = ${s.e.toFixed(2)}`, 6, ey - 6);
       ctx.fillText(`a = ${s.a.toFixed(2)}`, bx0, bottom + 16);
 
-      const phase = reducedMotion ? 0.6 : (time / 1000) * 2.2;
+      // Reduced motion slows the wave down rather than freezing it.
+      const phase = (time / 1000) * (reducedMotion ? 0.7 : 2.2);
       const N = Math.max(200, Math.round(w));
       const xs = Array.from({ length: N }, (_, i) => x0 + ((x1 - x0) * i) / (N - 1));
       const psi = xs.map((x) => psiAt(s, x, phase));
@@ -196,14 +197,14 @@ export function WaveCanvas({ e, v0, a, components = false, density = true, class
         line(xs.map((x, i) => [px(x), ey - psi[i].re * amp]), COLORS.re, 1.6, 8);
       }
 
-      if (!reducedMotion && visible) raf = requestAnimationFrame(draw);
+      if (visible) raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     const ro = new ResizeObserver(() => reducedMotion && requestAnimationFrame(draw));
     ro.observe(c);
     // resume when scrolled back into view
     const resume = setInterval(() => {
-      if (visible && !reducedMotion) {
+      if (visible) {
         cancelAnimationFrame(raf);
         raf = requestAnimationFrame(draw);
       }
