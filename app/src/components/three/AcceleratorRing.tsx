@@ -102,6 +102,7 @@ function makePool(n: number): Pool {
 }
 
 const smooth = (x: number) => x * x * (3 - 2 * x);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 /** Hero camera path: [progress, position, look-at target]. */
 function heroKeyframes(barrier: THREE.Vector3, wide: boolean, narrow: boolean) {
@@ -227,6 +228,60 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
     return mesh;
   }, []);
 
+  /**
+   * Additive glow shells over each magnet jaw. A magnet lights up as a
+   * particle passes through it, then fades: the beam visibly runs the ring.
+   */
+  const magnetGlow = useMemo(() => {
+    const n = 72;
+    const geo = new THREE.BoxGeometry(0.43, 0.08, 0.125);
+    const mat = new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mesh = new THREE.InstancedMesh(geo, mat, n * 2);
+    const slots: number[][] = Array.from({ length: n }, () => []);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * Math.PI * 2;
+      if (Math.abs(((th - BARRIER_THETA + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.2) continue;
+      q.setFromEuler(new THREE.Euler(0, -th, 0));
+      for (const y of [0.13, -0.13]) {
+        m.compose(new THREE.Vector3(Math.cos(th) * R, y, Math.sin(th) * R), q, new THREE.Vector3(1, 1, 1));
+        mesh.setMatrixAt(k, m);
+        mesh.setColorAt(k, new THREE.Color(0, 0, 0));
+        slots[i].push(k++);
+      }
+    }
+    mesh.count = k;
+    return { mesh, slots, level: new Float32Array(n), n };
+  }, []);
+  const glowColor = useMemo(() => new THREE.Color(), []);
+
+  /** Expanding energy pulses: two from the core across the ring plane, three tunneling shockwaves at the barrier. */
+  const pulseGeo = useMemo(() => new THREE.TorusGeometry(1, 0.012, 6, 160), []);
+  const pulses = useMemo(
+    () =>
+      Array.from({ length: 5 }, (_, i) => {
+        const mat = new THREE.MeshBasicMaterial({ color: i < 2 ? "#2864FF" : "#EAFBFF", transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+        return { mesh: new THREE.Mesh(pulseGeo, mat), t0: i < 2 ? -i * 2.2 : -10 };
+      }),
+    [pulseGeo],
+  );
+  const nextShock = useRef(0);
+
+  /** Energy motes rising from the quantum core. */
+  const MOTES = 48;
+  const moteGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(MOTES * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    const c = new Float32Array(MOTES * 3);
+    for (let i = 0; i < MOTES; i++) c.set(i % 3 ? [0, 0.85, 1] : [0.92, 0.98, 1], i * 3);
+    g.setAttribute("aColor", new THREE.BufferAttribute(c, 3));
+    g.setAttribute("aSize", new THREE.BufferAttribute(new Float32Array(MOTES).map(() => 0.7 + Math.random() * 0.9), 1));
+    g.setAttribute("aAlpha", new THREE.BufferAttribute(new Float32Array(MOTES), 1).setUsage(THREE.DynamicDrawUsage));
+    return g;
+  }, []);
+
   const ticks = useMemo(() => {
     const n = 120;
     const geo = new THREE.BoxGeometry(0.012, 0.012, 0.22);
@@ -297,6 +352,11 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
       [ringMat, haloMat, barrierMat, particleMat, dustMat, arcMat, ...lightMats].forEach((m) => m.dispose());
       [ringGeo, haloGeo, markGeo, railGeo, innerGeo, spokeGeo, particleGeo, dustGeo, arcGeo, coreGlowGeo].forEach((g) => g.dispose());
       magnets.geometry.dispose();
+      magnetGlow.mesh.geometry.dispose();
+      (magnetGlow.mesh.material as THREE.Material).dispose();
+      pulseGeo.dispose();
+      pulses.forEach((pl) => (pl.mesh.material as THREE.Material).dispose());
+      moteGeo.dispose();
       (magnets.material as THREE.Material).dispose();
       ticks.geometry.dispose();
       (ticks.material as THREE.Material).dispose();
@@ -338,6 +398,7 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
   }));
 
   const barrierPos = new THREE.Vector3(Math.cos(BARRIER_THETA) * R, 0, Math.sin(BARRIER_THETA) * R);
+  const barrierQuat = useMemo(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -BARRIER_THETA, 0)), []);
   const tmp = useMemo(() => new THREE.Vector3(), []);
   const camTarget = useMemo(() => new THREE.Vector3(), []);
   const spokes = useMemo(() => Array.from({ length: 6 }, (_, i) => (i / 6) * Math.PI * 2 + 0.3), []);
@@ -401,6 +462,8 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
       wantPos.set(pointer.x * 0.5, 5.2 + pointer.y * 0.3, 12.5);
       wantTarget.set(0, 0, 0);
     }
+    // Slow drift around the machine so the scene never sits still.
+    if (!reducedMotion) wantPos.applyAxisAngle(Y_AXIS, framing === "hero" ? Math.sin(t * 0.09) * 0.16 : t * 0.045);
     const follow = reducedMotion ? 1 : 1 - Math.exp(-frameDt * 6);
     camera.position.lerp(wantPos, follow);
     if (!curTarget.current) curTarget.current = wantTarget.clone();
@@ -423,7 +486,8 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
         const y = (-proj.y * 0.5 + 0.5) * h;
         const o = visible ? fade : 0;
         el.style.opacity = o.toFixed(3);
-        el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+        // Whole pixels: fractional positions blur the label text.
+        el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
         el.style.visibility = o > 0.01 ? "visible" : "hidden";
         // Preferred side, flipped if the card would leave the screen.
         let side = an.side && an.side !== "auto" ? an.side : x > w * 0.5 ? "left" : "right";
@@ -485,6 +549,7 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
             if (pool.outcome[i] === 1) {
               pool.state[i] = 2;
               impact.current.breach = 1;
+              pulses[2 + (nextShock.current++ % 3)].t0 = t;
               pool.color.set([C.flare.r, C.flare.g, C.flare.b], i * 3);
             } else {
               pool.state[i] = 3;
@@ -536,6 +601,56 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
     particleGeo.attributes.aSize.needsUpdate = true;
     particleGeo.attributes.aAlpha.needsUpdate = true;
 
+    // ---- magnets light up as particles pass
+    const gl = magnetGlow;
+    for (let i = 0; i < gl.n; i++) gl.level[i] *= Math.exp(-dt * 2.6);
+    for (let i = 0; i < particles; i++) {
+      if (pool.state[i] === 0 || pool.delay[i] > 0) continue;
+      const th = ((pool.theta[i] % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      const slot = Math.round(th / ((Math.PI * 2) / gl.n)) % gl.n;
+      gl.level[slot] = Math.max(gl.level[slot], pool.state[i] === 3 ? 0.4 : 0.75);
+    }
+    for (let i = 0; i < gl.n; i++) {
+      const v = gl.level[i];
+      glowColor.setRGB(v * 0.01, v * 0.22, v * 0.42);
+      for (const k of gl.slots[i]) gl.mesh.setColorAt(k, glowColor);
+    }
+    if (gl.mesh.instanceColor) gl.mesh.instanceColor.needsUpdate = true;
+
+    // ---- core pulses (radar sweep across the ring plane) and tunneling shockwaves
+    pulses.forEach((pl, i) => {
+      const m = pl.mesh.material as THREE.MeshBasicMaterial;
+      if (i < 2) {
+        const age = (((t - pl.t0) % 4.4) + 4.4) % 4.4;
+        const u = age / 4.4;
+        pl.mesh.position.set(0, 0, 0);
+        pl.mesh.rotation.set(Math.PI / 2, 0, 0);
+        pl.mesh.scale.setScalar(0.2 + u * (R - 0.1));
+        m.opacity = reducedMotion ? 0 : 0.55 * Math.sin(u * Math.PI) * (1 - u * 0.5);
+      } else {
+        const u = (t - pl.t0) / 1.1;
+        pl.mesh.position.copy(barrierPos).setY(0);
+        pl.mesh.quaternion.copy(barrierQuat);
+        pl.mesh.scale.setScalar(0.15 + Math.min(1, Math.max(0, u)) * 1.6);
+        m.opacity = u >= 0 && u <= 1 ? 0.9 * (1 - u) : 0;
+      }
+    });
+
+    // ---- motes rising from the core
+    const mp = moteGeo.attributes.position.array as Float32Array;
+    const ma = moteGeo.attributes.aAlpha.array as Float32Array;
+    for (let i = 0; i < MOTES; i++) {
+      const u = (t * 0.12 + i / MOTES) % 1;
+      const ang = i * 2.39996 + t * 0.4;
+      const r = 0.12 + u * 0.9 + (i % 5) * 0.04;
+      mp[i * 3] = Math.cos(ang) * r;
+      mp[i * 3 + 1] = u * 3.2 - 0.2;
+      mp[i * 3 + 2] = Math.sin(ang) * r;
+      ma[i] = reducedMotion ? 0 : Math.sin(u * Math.PI) * 0.7;
+    }
+    moteGeo.attributes.position.needsUpdate = true;
+    moteGeo.attributes.aAlpha.needsUpdate = true;
+
     // ---- electrical arcs at the barrier
     arcs.current = arcs.current.filter((a) => t - a.t < 0.35);
     const ap = arcGeo.attributes.position.array as Float32Array;
@@ -554,7 +669,6 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
     arcMat.opacity = arcs.current.length ? 0.85 : 0;
   });
 
-  const barrierQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -BARRIER_THETA, 0));
 
   return (
     <>
@@ -583,6 +697,11 @@ function Scene({ mode, apiRef, scrollRef, particles = 160, reducedMotion, framin
         ))}
         {/* magnets (dipoles) */}
         <primitive object={magnets} />
+        <primitive object={magnetGlow.mesh} />
+        {pulses.map((pl, i) => (
+          <primitive key={i} object={pl.mesh} />
+        ))}
+        <points geometry={moteGeo} material={dustMat} frustumCulled={false} />
         {/* markings */}
         <mesh ref={markRef} geometry={markGeo} rotation={[Math.PI / 2, 0, 0]}>
           <meshBasicMaterial color="#1f3247" transparent opacity={0.9} />

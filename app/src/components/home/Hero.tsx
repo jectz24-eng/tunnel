@@ -62,15 +62,15 @@ export function Hero() {
       {q.webgl === true && !q.mobile && (
         <div className="pointer-events-none absolute inset-0 hidden lg:block" aria-hidden="true">
           {LABELS.map((l) => (
-            <div key={l.id} ref={(el) => void (labelRefs.current[l.id] = el)} className="group absolute left-0 top-0 will-change-transform" style={{ opacity: 0, visibility: "hidden" }} data-side="right">
+            <div key={l.id} ref={(el) => void (labelRefs.current[l.id] = el)} className="group absolute left-0 top-0" style={{ opacity: 0, visibility: "hidden" }} data-side="right">
               <span className="label-in absolute inset-0" style={{ animationDelay: `${l.delay}s` }}>
                 <span className="absolute -left-[4px] -top-[4px] size-2 rounded-full bg-cyan shadow-[0_0_12px_#00D9FF]" />
                 <span className="absolute -left-[10px] -top-[10px] size-5 animate-ping rounded-full border border-cyan/40 [animation-duration:2.6s]" />
-                <span className="absolute top-0 h-px w-14 bg-gradient-to-r from-cyan/80 to-cyan/10 group-data-[side=left]:right-0 group-data-[side=left]:rotate-180 group-data-[side=right]:left-0" />
+                <span className="leader-line absolute top-0 h-px w-14 group-data-[side=left]:right-0 group-data-[side=left]:rotate-180 group-data-[side=right]:left-0" />
               </span>
-              <span className="label-in absolute top-0 w-max -translate-y-1/2 rounded-lg border border-cyan/20 bg-bg/60 px-3 py-2 backdrop-blur-md group-data-[side=left]:right-16 group-data-[side=right]:left-16" style={{ animationDelay: `${l.delay + 0.1}s` }}>
-                <span className="block font-mono text-[10.5px] tracking-[0.2em] text-cyan">{l.title.toUpperCase()}</span>
-                <span className="mt-0.5 block font-mono text-[10.5px] text-muted">{l.detail}</span>
+              <span className="label-in absolute top-[-23px] flex h-[46px] w-max flex-col justify-center rounded-lg border border-cyan/25 bg-[#070b12]/90 px-3.5 shadow-[0_8px_30px_-12px_rgba(0,217,255,0.35)] group-data-[side=left]:right-16 group-data-[side=right]:left-16" style={{ animationDelay: `${l.delay + 0.1}s` }}>
+                <span className="block font-mono text-[11px] font-medium tracking-[0.16em] text-cyan antialiased">{l.title.toUpperCase()}</span>
+                <span className="mt-1 block font-mono text-[11px] text-fg-2/80 antialiased">{l.detail}</span>
               </span>
             </div>
           ))}

@@ -40,7 +40,8 @@ export function useQuality(): Quality {
         // `?motion=force` overrides the OS setting (for testing and screenshots).
         reducedMotion: mq.matches && !new URLSearchParams(window.location.search).has("motion"),
         tier,
-        dpr: tier === "high" ? [1, 1.75] : tier === "medium" ? [1, 1.5] : [1, 1.25],
+        // Render at the display's full pixel density (capped at 2x) so edges and glow stay crisp.
+        dpr: tier === "low" ? [1, 1.5] : [1, 2],
         mobile,
       });
     };

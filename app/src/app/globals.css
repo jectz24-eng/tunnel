@@ -331,3 +331,15 @@
   opacity: 0;
   animation: label-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Leader line from a pinned 3D marker to its label, with a pulse of light flowing outward. */
+.leader-line {
+  background:
+    linear-gradient(90deg, transparent 0%, #eafbff 50%, transparent 100%) -40% 0 / 40% 100% no-repeat,
+    linear-gradient(90deg, rgb(0 217 255 / 0.85), rgb(0 217 255 / 0.15));
+  animation: leader-flow 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes leader-flow {
+  0% { background-position: -40% 0, 0 0; }
+  100% { background-position: 140% 0, 0 0; }
+}
