@@ -118,7 +118,7 @@ describe("deployments", () => {
   it("closes early when the chain nears the entropy slot", async () => {
     const id = await open();
     const c = await db.cycle.findUniqueOrThrow({ where: { id } });
-    expect(c.entropySlot).toBe(SLOT + 1_500n + 75n); // 600 s / 0.4 s + margin
+    expect(c.entropySlot).toBe(SLOT + 1_538n); // (600 s + 15 s margin) / 0.4 s
     expect(await closeDueCycles(db, new Date(), c.entropySlot - 31n)).toEqual([]);
     expect(await closeDueCycles(db, new Date(), c.entropySlot - 30n)).toEqual([id]);
   });

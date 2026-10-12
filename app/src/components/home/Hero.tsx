@@ -15,7 +15,7 @@ const AcceleratorRing = dynamic(() => import("../three/AcceleratorRing"), { ssr:
 
 /** A few labels pinned to parts of the machine (always visible, no scroll choreography). */
 const LABELS: (Annotation & { title: string; detail: string; delay: number })[] = [
-  { id: "ring", anchor: "ringBack", window: [-1, 2], side: "right", title: "Storage ring", detail: "particles circulate until the cycle closes", delay: 0.9 },
+  { id: "ring", anchor: "ringBack", window: [-1, 2], side: "left", title: "Storage ring", detail: "particles circulate until the cycle closes", delay: 0.9 },
   { id: "barrier", anchor: "barrierTop", window: [-1, 2], side: "left", title: "Potential barrier", detail: "height V₀ · width a", delay: 1.15 },
   { id: "transmission", anchor: "transmission", window: [-1, 2], side: "right", title: "Transmission zone", detail: "where tunneled particles emerge", delay: 1.4 },
 ];
@@ -37,6 +37,8 @@ export function Hero() {
       {/* backdrop + scene */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_62%_45%,#0B1628_0%,#05070B_70%)]" />
       <div className="grid-backdrop absolute inset-0 opacity-50" />
+      {/* On large screens the machine lives in the right-hand column so the headline never covers it. */}
+      <div className="absolute inset-0 opacity-40 lg:left-[44%] lg:opacity-100">
       <motion.div className="absolute inset-0" initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1.6, ease }}>
         {q.webgl === true ? (
           <AcceleratorRing
@@ -54,9 +56,6 @@ export function Hero() {
         ) : null}
       </motion.div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_75%_75%_at_55%_50%,transparent_45%,#05070B_100%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-bg/80 to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-[55%] bg-gradient-to-r from-bg/70 via-bg/25 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-bg to-transparent" />
 
       {/* pinned labels (positioned every frame by the 3D scene) */}
       {q.webgl === true && !q.mobile && (
@@ -77,13 +76,19 @@ export function Hero() {
         </div>
       )}
 
+      </div>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-bg/80 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-[70%] bg-gradient-to-r from-bg/85 via-bg/40 to-transparent lg:w-[50%] lg:from-bg lg:via-bg/60" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-bg to-transparent" />
+
       {/* headline */}
       <div className="relative z-10 mx-auto flex w-full max-w-[1400px] flex-1 flex-col justify-center px-4 pt-16 sm:px-6">
+        <div className="lg:max-w-[42%]">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease, delay: 0.15 }} className="eyebrow flex items-center gap-3">
           <span className="inline-block h-px w-8 bg-cyan/70" />
           TUNNEL / QUANTUM EXPERIMENT 001
         </motion.div>
-        <h1 className="display mt-6 text-[clamp(44px,8vw,120px)]">
+        <h1 className="display mt-6 max-w-[11ch] text-[clamp(40px,9vw,64px)] lg:max-w-none lg:text-[clamp(48px,4.6vw,78px)]">
           {["MINE THROUGH", "THE IMPOSSIBLE."].map((line, i) => (
             <span key={line} className="block overflow-hidden pb-[0.06em]">
               <motion.span
@@ -108,6 +113,7 @@ export function Hero() {
             Explore the protocol
           </ButtonLink>
         </motion.div>
+        </div>
       </div>
 
       <div className="pointer-events-none relative z-10 mx-auto w-full max-w-[1400px] px-4 pb-3 text-right font-mono text-[10px] tracking-[0.18em] text-faint sm:px-6">

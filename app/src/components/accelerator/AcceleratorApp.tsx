@@ -193,7 +193,9 @@ export function AcceleratorApp() {
           ? result.plan.successes > 0
             ? "TUNNELING SUCCESSFUL"
             : "PARTICLE REFLECTED"
-          : "READY · CONFIGURE YOUR PARTICLES";
+          : watchedPosition?.settled && watchedCycle && !wasRevealed(watchedCycle.id)
+            ? "CYCLE SETTLED · REPLAYING YOUR PARTICLES"
+            : "READY · CONFIGURE YOUR PARTICLES";
   const hudTone = hud.includes("SUCCESS") ? "text-flare" : hud.includes("REFLECTED") ? "text-amber" : "text-cyan";
   const ambient = !revealing && !(watchedPosition && !watchedPosition.settled);
 

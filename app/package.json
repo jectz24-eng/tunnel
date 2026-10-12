@@ -16,9 +16,11 @@
     "@solana/wallet-adapter-base": "0.9.28",
     "@solana/wallet-adapter-react": "0.15.40",
     "@solana/web3.js": "1.99.0",
+    "@tunnel/core": "*",
     "@tunnel/db": "*",
     "@tunnel/sdk": "*",
     "geist": "1.7.2",
+    "lenis": "1.3.11",
     "motion": "14.1.0",
     "next": "16.4.0",
     "react": "19.3.0",
@@ -26,8 +28,7 @@
     "recharts": "3.10.1",
     "server-only": "^0.0.1",
     "three": "0.186.1",
-    "tweetnacl": "^1.0.3",
-    "@tunnel/core": "*"
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",

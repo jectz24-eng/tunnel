@@ -21,10 +21,10 @@ import {
 import { randomBytes } from "node:crypto";
 import { loadConfig, type Db, type Tx } from "./config";
 
-/** Approximate Solana slot time used to place the entropy slot after close. */
+/** Nominal Solana slot time; the engine passes the chain's measured rate when it can. */
 export const SLOT_MS = 400;
-/** Extra slots beyond the estimated close slot, so the entropy block cannot exist while deployments are open. */
-export const ENTROPY_MARGIN_SLOTS = 75n;
+/** Extra time beyond the estimated close slot, so the entropy block cannot exist while deployments are open. */
+export const ENTROPY_MARGIN_MS = 15_000;
 /** Close the window early if the chain is within this many slots of the entropy slot. */
 export const ENTROPY_GUARD_SLOTS = 30n;
 
@@ -46,7 +46,7 @@ export async function reserveAvailable(db: Tx, fundedTotal: bigint): Promise<big
 export type OpenResult = { opened: true; id: bigint } | { opened: false; reason: "paused" | "already_open" | "reserve_exhausted" };
 
 /** Opens the next cycle if none is open and mining is not paused. */
-export async function openCycle(db: Db, now: Date, currentSlot: bigint): Promise<OpenResult> {
+export async function openCycle(db: Db, now: Date, currentSlot: bigint, slotMs = SLOT_MS): Promise<OpenResult> {
   return db.$transaction(async (tx) => {
     // Serialise openers on the config row.
     await tx.$executeRaw`SELECT 1 FROM "ProtocolConfig" WHERE "id" = 1 FOR UPDATE`;
@@ -63,7 +63,7 @@ export async function openCycle(db: Db, now: Date, currentSlot: bigint): Promise
 
     const durationMs = cfg.params.cycleDurationSecs * 1000;
     const closeTs = new Date(now.getTime() + durationMs);
-    const entropySlot = currentSlot + BigInt(Math.ceil(durationMs / SLOT_MS)) + ENTROPY_MARGIN_SLOTS;
+    const entropySlot = currentSlot + BigInt(Math.ceil((durationMs + ENTROPY_MARGIN_MS) / slotMs));
     const seed = randomBytes(32);
     await tx.cycle.create({
       data: {

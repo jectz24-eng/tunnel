@@ -28,6 +28,12 @@ NEXT_PUBLIC_LOCAL_TEST_WALLET=true      # optional in-browser burner wallet (loc
 
 Tests: `npm test` (SDK, core and engine against real Postgres, app) and `npm run test:e2e` (Playwright).
 
+### Presenting the local stack
+
+* Start the validator **with `--reset`** every time. A test validator resumed from an old ledger can stop landing transactions (airdrops and payouts hang). Because a reset wipes the token, also delete `.pgdata/` and `deployments/localnet.json`, then rerun `db:migrate` and `local-setup.ts`.
+* `--cycle-secs 60` gives a full deploy → settle → reveal → claim loop in about 1½ minutes. The engine measures the chain's real slot speed, so results arrive about 30 s after a cycle closes.
+* With `NEXT_PUBLIC_LOCAL_TEST_WALLET=true`, choose **Local Test Wallet** in the connect dialog; no browser extension is needed.
+
 ## 2. Mainnet on Render
 
 What you need: a GitHub repo with this code, a Render account, a mainnet RPC

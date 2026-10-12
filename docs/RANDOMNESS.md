@@ -11,7 +11,7 @@ At cycle open the engine:
 
 * draws `seed` (32 bytes, `crypto.randomBytes`);
 * publishes `seedCommitment = sha256("TUNNEL/seed-commit/v3" ‖ seed)`;
-* publishes `entropySlot = currentSlot + ceil(cycleDuration / 400 ms) + 75`.
+* publishes `entropySlot = currentSlot + ceil((cycleDuration + 15 s) / slotTime)`, where `slotTime` is the chain’s measured average (≈ 400 ms on mainnet).
 
 Deployments are refused once the cycle closes, and also when the chain's latest
 slot is within 30 slots of `entropySlot` (in case slots run faster than 400 ms).

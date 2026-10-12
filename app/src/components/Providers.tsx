@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
+import { MotionConfig } from "motion/react";
 import { useMemo, type ReactNode } from "react";
 import { appConfig } from "@/lib/config";
 import { LocalTestWalletAdapter } from "@/lib/localWallet";
@@ -19,7 +20,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ConnectionProvider endpoint={appConfig.rpcUrl} config={{ commitment: "confirmed" }}>
       <WalletProvider wallets={wallets} autoConnect>
-        {children}
+        <MotionConfig reducedMotion="user">{children}</MotionConfig>
       </WalletProvider>
     </ConnectionProvider>
   );
