@@ -66,7 +66,7 @@ export function Nav() {
           <SoundToggle className="hidden sm:flex" />
           <WalletButton />
           <span className="hidden md:inline-flex">
-            <ButtonLink href="/accelerator" variant="energy" size="sm" className="px-3.5 font-mono text-[11px] uppercase tracking-[0.12em]">
+            <ButtonLink href="/accelerator" variant="energy" size="sm" className="whitespace-nowrap px-3.5 font-mono text-[11px] uppercase tracking-[0.12em]">
               Start mining
             </ButtonLink>
           </span>

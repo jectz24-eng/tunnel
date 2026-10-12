@@ -38,7 +38,7 @@ export function Hero() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_62%_45%,#0B1628_0%,#05070B_70%)]" />
       <div className="grid-backdrop absolute inset-0 opacity-50" />
       {/* On large screens the machine lives in the right-hand column so the headline never covers it. */}
-      <div className="absolute inset-0 opacity-40 lg:left-[44%] lg:opacity-100">
+      <div className="absolute inset-0 opacity-40 lg:left-[calc(50%-150px)] lg:right-[max(0px,calc(50%-860px))] lg:opacity-100">
       <motion.div className="absolute inset-0" initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1.6, ease }}>
         {q.webgl === true ? (
           <AcceleratorRing
@@ -83,12 +83,12 @@ export function Hero() {
 
       {/* headline */}
       <div className="relative z-10 mx-auto flex w-full max-w-[1400px] flex-1 flex-col justify-center px-4 pt-16 sm:px-6">
-        <div className="lg:max-w-[42%]">
+        <div className="lg:max-w-[min(640px,42vw)]">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease, delay: 0.15 }} className="eyebrow flex items-center gap-3">
           <span className="inline-block h-px w-8 bg-cyan/70" />
           TUNNEL / QUANTUM EXPERIMENT 001
         </motion.div>
-        <h1 className="display mt-6 max-w-[11ch] text-[clamp(40px,9vw,64px)] lg:max-w-none lg:text-[clamp(48px,4.6vw,78px)]">
+        <h1 className="display mt-6 max-w-[11ch] text-[clamp(40px,9vw,64px)] lg:max-w-none lg:whitespace-nowrap lg:text-[clamp(44px,4.1vw,72px)]">
           {["MINE THROUGH", "THE IMPOSSIBLE."].map((line, i) => (
             <span key={line} className="block overflow-hidden pb-[0.06em]">
               <motion.span
