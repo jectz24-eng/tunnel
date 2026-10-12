@@ -1,11 +1,12 @@
-# Render Blueprint for TUNNEL: website + keeper (crank & indexer) + PostgreSQL.
-# Deploy: push this repo to GitHub/GitLab, then Render → New → Blueprint → select the repo.
+# Render Blueprint for TUNNEL: website + cycle engine + PostgreSQL. No smart contract.
+# Deploy: push this repo to GitHub, then Render → New → Blueprint → select the repo.
 #
 # Values marked `sync: false` are entered in the Render dashboard (never committed).
-# The keeper's keypair is uploaded as a Secret File named keeper.json.
+# The engine's reward-wallet keypair is uploaded as a Secret File named reward-wallet.json.
+# The web service never holds any key.
 #
-# Mainnet mining stays DISABLED in the UI until NEXT_PUBLIC_MAINNET_DEPOSITS_ENABLED is set
-# to "true" (see docs/CHECKLIST.md: audit, tokenomics, legal review, multisig authorities).
+# Mining starts PAUSED. Resume it from /admin (or `npm run admin -- resume`) only after
+# the reward wallet is funded and every item in docs/CHECKLIST.md is done.
 
 databases:
   - name: tunnel-db
@@ -19,7 +20,7 @@ services:
     runtime: node
     plan: starter
     buildCommand: npm ci && npm run build -w app
-    preDeployCommand: npx --workspace packages/db prisma migrate deploy
+    preDeployCommand: npm run db:migrate
     startCommand: npm run start -w app
     healthCheckPath: /api/health
     envVars:
@@ -33,20 +34,19 @@ services:
         generateValue: true
       - key: NEXT_PUBLIC_CLUSTER
         value: mainnet-beta
-      # A dedicated mainnet RPC (Helius, Triton, QuickNode…). The public endpoint is rate limited.
+      # A dedicated mainnet RPC (Helius, Triton, QuickNode…). Used by browsers for balances only.
       - key: NEXT_PUBLIC_RPC_URL
         sync: false
-      - key: SOLANA_RPC_URL
+      # Comma-separated wallet addresses allowed into /admin.
+      - key: ADMIN_WALLETS
         sync: false
-      - key: NEXT_PUBLIC_MAINNET_DEPOSITS_ENABLED
-        value: "false"
 
   - type: worker
-    name: tunnel-keeper
+    name: tunnel-engine
     runtime: node
     plan: starter
     buildCommand: npm ci
-    startCommand: npm run keeper
+    startCommand: npm run engine
     envVars:
       - key: NODE_VERSION
         value: "22"
@@ -56,10 +56,14 @@ services:
           property: connectionString
       - key: SOLANA_RPC_URL
         sync: false
-      - key: SOLANA_WS_URL
+      - key: TUNNEL_MINT
         sync: false
-      # Upload the keeper hot-wallet keypair as Secret File "keeper.json" (holds only SOL for cycle rent + ORAO fees).
-      - key: KEEPER_KEYPAIR
-        value: /etc/secrets/keeper.json
+      # Upload the reward-wallet keypair as Secret File "reward-wallet.json".
+      # It holds the $TUNNEL mining reserve and a little SOL for transfer fees.
+      - key: REWARD_WALLET_KEYPAIR
+        value: /etc/secrets/reward-wallet.json
+      # Payouts larger than this (whole $TUNNEL) wait for manual review.
+      - key: ENGINE_MAX_PAYOUT_TOKENS
+        value: "50000"
       - key: LOG_LEVEL
         value: info

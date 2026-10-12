@@ -1,70 +1,53 @@
-# Architecture
+# TUNNEL architecture (v3: server-authoritative, no smart contract)
+
+TUNNEL is a physics-inspired mining game. Wallets spend a free per-cycle energy
+allowance on particles; each particle's tunneling probability comes from the
+rectangular-barrier transmission formula; a provably fair random draw decides
+each particle; successful particles earn real $TUNNEL (an SPL token) from a
+pre-funded reserve.
+
+There is **no on-chain program**. The game runs on a Node server. Solana is used
+for three things only:
+
+1. **$TUNNEL itself**: a standard SPL mint, held in wallets.
+2. **Payouts**: real SPL `transferChecked` transfers from the reward wallet.
+3. **Public entropy**: each cycle's randomness includes the hash of a Solana
+   block that does not exist until the cycle has closed.
 
 ```
-┌──────────────────────────────┐  wallet-approved txs  ┌────────────────────────────────┐  CPI  ┌─────────────┐
-│ Next.js app (app)            │ ─────────────────────► │ TUNNEL Anchor program          │ ────► │ ORAO VRF v2 │
-│ React 19 · R3F/three · Motion│ ◄── RPC reads (truth) ─│ Protocol · Cycle · Position    │       └─────────────┘
-│ API routes · SSE · gatekeeper│                        │ RewardVault (SPL) · physics.rs │
-└────────────┬─────────────────┘                        └──────────────▲─────────────────┘
-             │ SQL (derived views)                                     │ permissionless cranks
-┌────────────▼─────────────────┐  events + account reads ┌────────────┴───────────────────┐
-│ PostgreSQL (Prisma)          │ ◄────────────────────── │ keeper (services/keeper)        │
-└──────────────────────────────┘                         │ indexer · reconciler · crank    │
-                                                          └────────────────────────────────┘
+ browser ──signMessage──▶ tunnel-web (Next.js)  ──▶ PostgreSQL ◀── tunnel-engine (Node)
+   │   (free, no tx)       /api/deploy, /api/claim        ▲            │  cycles: open → close → settle
+   │                       /api/state, /api/me, …          │            │  payouts: SPL transfers
+   └── reads balances ─────────────── Solana RPC ◀─────────┴────────────┘  entropy: blockhash
 ```
 
-Four independent concerns, as the brief requires:
+## Packages
 
-| Concern | Where | Notes |
-|---|---|---|
-| **Physics → probability** | `programs/tunnel/src/physics.rs` (onchain, soft-float), `packages/sdk/src/physics.ts` (mirror + wavefunction solver) | Probability per [barrier][level] stored as ppb integers |
-| **Randomness → outcome** | ORAO VRF + `math::particle_draw` | Seed fixed at close; per-particle SHA-256 draws |
-| **Rules** | the program | energy, caps, payouts, claims, authority |
-| **Presentation** | `app` | Reveals outcomes only after settlement; recomputes from chain |
-
-## Repository
-| Path | Contents |
+| Path | Role |
 |---|---|
-| `programs/tunnel` | Anchor program: `admin`, `cycle`, `deploy`, `settle`, `claim` instructions; `physics.rs`, `math.rs` |
-| `packages/sdk` | PDAs, instruction builders, account decoders, physics + wavefunction, exact settlement math, verification, compiler IDL |
-| `packages/db` | Prisma schema + migrations (with CHECK constraints) |
-| `services/keeper` | Indexer (websocket + cursor backfill), reconciler (cycles, positions, experiment outcomes, wallet stats), crank |
-| `app` | Next.js site: Home, Accelerator, How it works, Laboratory, Leaderboard, Tokenomics, History (+ cycle/experiment verification), Profile, Admin; API routes |
-| `scripts` | token, init, fund, admin CLI, localnet bootstrap/validator/VRF fulfiller, e2e run, physics reference values |
-| `tests` | Anchor integration suite (localnet with cloned ORAO) |
+| `packages/sdk` | Pure TypeScript: physics (`transmission`, `transmissionPpb`, wave solver), odds and reward calibration (`deriveOdds`), emissions, particle draws, fairness (`commitSeed`, `deriveRandomness`), the canonical signed-message formats, and `verifyCycle`. Used by the server, the engine and the browser. |
+| `packages/db` | Prisma 7 schema + migrations (PostgreSQL). |
+| `packages/core` | The protocol rules, shared by web and engine: `deploy`, `requestClaim`, `openCycle`, `closeDueCycles`, `settleCycle`, `voidCycle`, payout state transitions, wallet stats, configuration. Every state change is a database transaction holding the rows it depends on. |
+| `services/engine` | The only process with a key. Runs the cycle loop, reads entropy blocks, sends payouts, publishes reward-wallet balances and a heartbeat. |
+| `app` | Next.js 16 site and API. Holds no keys. |
+| `scripts` | Token creation, reward wallet creation, reserve funding, admin CLI, local bootstrap. |
 
-## Onchain accounts
-* **Protocol** — admin, pending admin, gatekeeper, mint, vault, `ProtocolParams` (barriers V₀/a/premium, energy levels E/V₀ + cost, energy per cycle, reward per energy, cycle duration, randomness timeout, emission schedule), derived `OddsTable`, counters.
-* **Cycle** — status/outcome, window, *snapshot* of barriers, levels, odds, energy allowance and budget; participants, experiments, particles, energy; VRF seed and randomness; successes, Σ nominal, allocated, claims.
-* **Position** (one per wallet per cycle) — particles and successes per [barrier][level], energy used, experiment count, nominal reward, claim state.
+## Data model (PostgreSQL)
 
-## Settlement math
-```
-T(E,V₀,a)      = 1 / (1 + V₀² a² f(x)² / 4E),  x = a√|V₀−E|, f = sinh(x)/x (E<V₀)        (ħ²/2m = 1)
-ppb[b][l]      = round(T(V₀_b · E_l, V₀_b, a_b) · 10⁹)
-reward[b][l]   = ⌊reward_per_energy · cost_l · premium_b · 10⁹ / (10⁴ · ppb)⌋
-draw(i)        = u64_le(sha256("TUNNEL/particle/v2" ‖ R ‖ cycle ‖ owner ‖ b ‖ l ‖ i)[0..8]);  success ⇔ draw < ⌊ppb·2⁶⁴/10⁹⌋
-nominal(pos)   = Σ successes[b][l] · reward[b][l]
-budget(c)      = min(reserve_available, ⌊initial · decay^⌊c/epoch⌋⌋)
-payout(pos)    = nominal              if Σ nominal ≤ budget
-               = ⌊budget·nominal/Σ⌋   otherwise
-```
+* `ProtocolConfig`: parameters, derived odds, paused flag, reserve funded, reward-wallet balances, engine heartbeat.
+* `Cycle`: one row per cycle with its parameter/odds snapshot, budget, seed commitment, secret seed (revealed after settlement), entropy slot/blockhash, randomness and totals.
+* `Position`: one wallet in one cycle, with particles and successes per [barrier][level], nominal reward, final payout and link to a `Payout`.
+* `Experiment`: one signed deployment: the exact message and signature, plus its outcome bits after settlement.
+* `Payout`: one claim → one SPL transfer (`requested → sending → confirmed | failed`).
+* `ProtocolEvent`: append-only audit/activity log. `WalletStats` is recomputed from positions, never incremented.
+* `UsedNonce` and `RateLimit`: replay protection and rate limits.
 
-## Flows
-1. **Deploy** — `deploy_particles(cycle, barrier, level, count)` by the wallet (optionally co-signed by the gatekeeper). No transfer to the protocol; the position account's rent is the only lamport movement (refunded on claim).
-2. **Crank** (anyone; the keeper by default) — `open_cycle` → `close_cycle` → `request_randomness` → (ORAO fulfils) → `reveal_randomness` → `settle_position` × N → `finalize_cycle` → … → `sweep_cycle`; `void_cycle` on timeout.
-3. **Claim** — `claim(cycle)`: pays the payout (if any) to the wallet's ATA (created idempotently in the same tx) and closes the position.
+## A cycle
 
-## Backend
-* **Indexer** — `onLogs` (confirmed) + `getSignaturesForAddress` backfill from a cursor; rows keyed by `(signature, eventIndex)` with `skipDuplicates`. Finality promotion; dropped-fork cleanup.
-* **Reconciler** — re-reads Protocol/Cycles/Positions, rebuilds closed (claimed) positions from events, derives each experiment's particle outcomes from the revealed randomness and cross-checks them against the program's per-cell counts, recomputes wallet aggregates (incl. streaks) from positions.
-* **Crank** — pure planner + retrying sender; benign races logged as skipped; every attempt in `KeeperAction`.
-* **API** — `/api/stats`, `/api/activity`, `/api/stream` (SSE, resumable), `/api/cycles[/id]`, `/api/experiments[/cycle/owner/seq]` (search, filters, pagination), `/api/leaderboard?category=`, `/api/wallet/[owner]`, `/api/lab`, `/api/gatekeeper`, `/api/admin`, `/api/auth/*`, `/api/health`. Indexed responses carry `available: false` when the DB is down.
+1. **Open** (engine): snapshot params and odds; budget = `min(scheduled emission, unallocated reserve)`; generate a 32-byte seed; publish `sha256(domain ‖ seed)` and an `entropySlot` ≈ close + 30 s of slots. Mining paused or reserve empty → no cycle.
+2. **Deploy** (web): the wallet signs a readable message (wallet, cycle, barrier, level, particles, nonce, time). The server checks the canonical format, the ed25519 signature, freshness (5 min), nonce uniqueness, rate limits, then in one transaction locks the cycle row, checks it is open, checks energy, and records the experiment.
+3. **Close** (engine): at `closeTs`, or earlier if the chain is within 30 slots of `entropySlot`.
+4. **Settle** (engine): once the entropy slot is finalized, take the first produced block ≥ it; `randomness = sha512(domain ‖ seed ‖ blockhash ‖ cycle)`; draw every particle; compute payouts (pro rata above budget); reveal the seed. One transaction holding the cycle lock; idempotent.
+5. **Claim** (web + engine): the wallet signs a claim message; all settled, unpaid positions are bundled into one `Payout`; the engine signs the transfer, saves its signature and `lastValidBlockHeight`, then broadcasts. It is re-signed only after that blockhash has provably expired unconfirmed, so a payout can never land twice.
 
-## Database (spec → model)
-Users → `User` · MiningCycles → `Cycle` · MiningAttempts → `Experiment` · Rewards → `Position` + `Claim` · ProtocolConfiguration → `ProtocolState` · ProtocolEvents → `IndexedEvent`. Plus `WalletStats`, `IndexerCursor`, `KeeperAction`, `RateLimit`.
-
-## Frontend data rules
-* Live cycle state, balances, positions, claimables and reveal outcomes come **from chain**.
-* History, leaderboards, live activity and lab statistics come from the indexer and say so when it is unavailable.
-* Decorative visuals (hero ring, chamber ambient particles) are labelled as visual effects. The live ring only shows indexed events. Outcomes are animated only after `settle_position`; rewards only after `finalize_cycle`.
+See `RANDOMNESS.md` for the fairness argument and `SECURITY.md` for the trust model.

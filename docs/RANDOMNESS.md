@@ -1,41 +1,64 @@
-# Randomness
+# Randomness and verification
 
-## Provider
-| Option | Status (Oct 2026) | Fit |
-|---|---|---|
-| Switchboard On-Demand | Shut down (25 Sep 2026) | Not viable |
-| MagicBlock VRF | Maintained; built around Ephemeral Rollups | Unneeded complexity |
-| **ORAO VRF v2** | Maintained; `orao-solana-vrf 0.7.0`; same program on devnet & mainnet | **Selected** |
+Each particle's outcome must be (a) unknowable to everyone, the server included,
+while deployments are open, (b) impossible for the server to steer, and
+(c) recomputable by anyone afterwards. TUNNEL combines a committed server seed
+with a future Solana blockhash.
 
-Program: `VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y`.
+## Construction
 
-There is no `Math.random()` anywhere in settlement. Decorative animations in the web app use local randomness and are labelled as visual effects.
+At cycle open the engine:
 
-## Trust assumptions
-ORAO authorities sign the seed (Ed25519); ORAO's program verifies the signatures onchain and combines them once a quorum responds.
-* Unpredictable to anyone without a quorum of authority keys.
-* **Not fully trustless**: a colluding quorum learns the output once the seed exists and can withhold it. In TUNNEL v2 withholding leads to `void_cycle` after the timeout: nobody earns, the budget returns to the reserve. There are no stakes to refund.
+* draws `seed` (32 bytes, `crypto.randomBytes`);
+* publishes `seedCommitment = sha256("TUNNEL/seed-commit/v3" ‖ seed)`;
+* publishes `entropySlot = currentSlot + ceil(cycleDuration / 400 ms) + 75`.
 
-## Lifecycle
-1. Deployment window closes (`close_ts`).
-2. `close_cycle` (permissionless): `seed = sha256("TUNNEL/vrf-seed/v2" ‖ program_id ‖ cycle_pda ‖ cycle_id ‖ slot ‖ slot_hash)` from the newest SlotHashes entry.
-3. `request_randomness` (permissionless; cranker pays ORAO's fee). If the request already exists, no CPI.
-4. ORAO fulfils (seconds on devnet; `scripts/local-vrf-fulfiller.ts` plays the network on localnet using the real ORAO program).
-5. `reveal_randomness` copies the 64 bytes after checking PDA, owner and seed.
+Deployments are refused once the cycle closes, and also when the chain's latest
+slot is within 30 slots of `entropySlot` (in case slots run faster than 400 ms).
 
-Timeout (`randomness_timeout_secs`, 900 s at launch): `void_cycle` from `Open` (with participants) / `Closed` / `AwaitingRandomness`, refused while fulfilled randomness exists.
+After close, once `entropySlot` is finalized, the engine takes the **first
+produced block at or after `entropySlot`** (slots can be skipped) and computes
 
-## Randomness → outcome
 ```
-draw(i) = u64_le(sha256("TUNNEL/particle/v2" ‖ randomness[64] ‖ cycle_id_le ‖ owner[32] ‖ barrier ‖ level ‖ u32_le(i))[0..8])
-tunnels ⇔ draw < ⌊ppb · 2⁶⁴ / 10⁹⌋
+randomness = sha512("TUNNEL/cycle-randomness/v3" ‖ seed ‖ blockhash ‖ u64_le(cycleId))      (64 bytes)
+draw(i)    = u64_le(sha256("TUNNEL/particle/v3" ‖ randomness ‖ u64_le(cycleId) ‖ wallet(32) ‖ barrier ‖ level ‖ u32_le(i))[0..8])
+tunnels    ⇔ draw(i) < ⌊ppb · 2⁶⁴ / 10⁹⌋
 ```
-`i` runs over the particles a wallet placed in that [barrier][level] cell, in deployment order; experiment *k* covers `first_index .. first_index + count` (emitted in `ParticlesDeployed`).
 
-## Verifying yourself
-1. Read the Cycle account: `randomness`, `vrf_seed`, `odds`, `barriers`, `levels`, `id`.
-2. Confirm the randomness at ORAO's request PDA `["orao-vrf-randomness-request", vrf_seed]`.
-3. Recompute every odds entry from the barrier physics (`verifyOdds`) and every draw (`particleOutcomes`) and compare with Position accounts (or `PositionSettled` events for claimed ones).
-4. Check payouts with `computePayout`.
+`i` indexes the wallet's particles within one [barrier][level] cell, in
+deployment order. The seed is revealed in the cycle record after settlement.
 
-The website does this in the browser on `/history/cycle/<id>` and `/history/<cycle>/<wallet>/<seq>`.
+## Why it is fair
+
+* **The server cannot steer outcomes.** The seed is fixed (committed) before
+  any deployment. Changing it would break the published commitment.
+* **Nobody can predict outcomes during deployment.** The blockhash does not
+  exist until after deployments close. The server knows its seed, but without
+  the blockhash it knows nothing about any draw.
+* **Anyone can verify.** Check `sha256(domain ‖ seed) = seedCommitment`, fetch
+  the block at `entropySlotUsed` from any Solana RPC or explorer, confirm it is
+  the first produced block ≥ `entropySlot`, then recompute every particle and
+  payout. `packages/sdk/src/verify.ts` does this; the cycle page runs it in the
+  browser.
+
+## Residual trust (stated plainly)
+
+* **Withholding.** After the blockhash appears, the server knows every outcome
+  before publishing. It cannot change them, but it could refuse to settle. The
+  cycle would then void after `ENGINE_VOID_AFTER_MS`: no rewards, and the
+  withholding would be visible publicly.
+* **Insertion.** Deployment timestamps are recorded by the server. Each
+  deployment carries a wallet signature over its cycle and issue time, and
+  late deployments are refused by a database lock. But a malicious operator
+  controlling a wallet could, in principle, insert records after the fact.
+  The entropy-slot guard and the public activity log make this detectable, not
+  impossible.
+* **Validator influence.** The leader producing the entropy block could, in
+  theory, choose to skip it. Doing so only moves to the next block and does
+  not reveal the seed.
+
+## Test vectors
+
+`packages/sdk/test/fairness.test.ts`: seed = bytes 0..31, blockhash = 32 × 0x07,
+cycle 42 → commitment `bd66390f…2605`, randomness `c60ef795…55ff`.
+`packages/sdk/test/math.test.ts`: particle draw vector `7227306695852544847`.
