@@ -5,12 +5,17 @@
 # The engine's reward-wallet keypair is uploaded as a Secret File named reward-wallet.json.
 # The web service never holds any key.
 #
+# FREE PLAN: free Postgres expires 30 days after creation (upgrade before then or lose
+# the database). Free web services sleep after 15 min without inbound traffic, including
+# the engine, so keep both awake with an uptime pinger on their URLs, or upgrade to paid
+# (engine as a `worker`, migrations back in `preDeployCommand`).
+#
 # Mining starts PAUSED. Resume it from /admin (or `npm run admin -- resume`) only after
 # the reward wallet is funded and every item in docs/CHECKLIST.md is done.
 
 databases:
   - name: tunnel-db
-    plan: basic-256mb
+    plan: free
     databaseName: tunnel
     user: tunnel
 
@@ -18,10 +23,10 @@ services:
   - type: web
     name: tunnel-web
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci && npm run build -w app
-    preDeployCommand: npm run db:migrate
-    startCommand: npm run start -w app
+    # Free instances have no preDeployCommand, so migrations run at start.
+    startCommand: npm run db:migrate && npm run start -w app
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
@@ -41,10 +46,11 @@ services:
       - key: ADMIN_WALLETS
         sync: false
 
-  - type: worker
+  # A web service only because the free plan has no workers; it serves engine health on $PORT.
+  - type: web
     name: tunnel-engine
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm run engine
     envVars:
