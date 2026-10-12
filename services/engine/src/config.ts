@@ -4,7 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 
 function keypair(path: string | undefined): Keypair | null {
   if (!path) return null;
-  if (!existsSync(path)) throw new Error(`REWARD_WALLET_KEYPAIR not found: ${path}`);
+  if (!existsSync(path)) {
+    // Not uploaded yet (e.g. the Render secret file): run without payouts instead of crash-looping.
+    console.warn(`REWARD_WALLET_KEYPAIR not found: ${path}; payouts and deposits stay off until it exists`);
+    return null;
+  }
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path, "utf8"))));
 }
 
