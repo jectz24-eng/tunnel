@@ -1,0 +1,32 @@
+{
+  "name": "@tunnel/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cycle engine: opens/closes/settles cycles and sends $TUNNEL payouts",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@solana/web3.js": "1.99.0",
+    "@tunnel/core": "*",
+    "@tunnel/db": "*",
+    "@solana/spl-token": "0.4.15",
+    "@tunnel/sdk": "*",
+    "dotenv": "^17.2.0",
+    "pino": "^10.0.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@prisma/adapter-pg": "7.10.0",
+    "tweetnacl": "^1.0.3",
+    "@types/node": "^24.0.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
+  }
+}
