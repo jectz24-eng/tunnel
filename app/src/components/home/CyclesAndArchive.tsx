@@ -7,12 +7,12 @@ import { splitCycles, useChainClock, useCycles } from "@/lib/chain";
 import { formatCountdown } from "@/lib/cycle";
 import { Arrow, ButtonLink, Empty, SectionHeading, Unavailable, Val } from "../ui";
 
-/** MINING CYCLES — the live cycle and the emissions reserve, read from chain. */
+/** MINING CYCLES — the live cycle and the emissions reserve. */
 export function MiningCycles() {
   const { now } = useChainClock(500);
-  const cycles = useCycles(4);
+  const cycles = useCycles();
   const protocol = cycles.protocol.data;
-  const { current, upcoming } = splitCycles(cycles.data, now);
+  const { current } = splitCycles(cycles.data, now);
   const loading = cycles.protocol.loading && protocol === undefined;
   const dur = current ? current.closeTs - current.openTs : (protocol?.params.cycleDurationSecs ?? 600);
   const progress = current ? Math.min(1, Math.max(0, (now - current.openTs) / dur)) : 0;
@@ -24,15 +24,15 @@ export function MiningCycles() {
       <div className="mx-auto grid max-w-[1400px] gap-12 px-4 py-28 sm:px-6 lg:grid-cols-[1fr_1fr] lg:items-center">
         <div>
           <SectionHeading eyebrow="06 / Mining cycles" title={<span id="cycles-title">Every ten minutes, the barrier opens.</span>}>
-            Each cycle gives every wallet a fresh energy allowance and a fixed $TUNNEL budget for everyone. When it closes, randomness is requested,
+            Each cycle gives every wallet a fresh energy allowance and a fixed $TUNNEL budget for everyone. When it closes, a future Solana block supplies the randomness,
             every particle is resolved, and rewards become claimable. Unused energy expires; unused budget returns to the reserve.
           </SectionHeading>
           <dl className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line">
             {[
               ["Energy per wallet / cycle", protocol ? `${protocol.params.energyPerCycle} units` : null],
-              ["Cycle budget", current ? `${formatTunnel(current.emissionBudget, 0)} $TUNNEL` : protocol ? `${formatTunnel(scheduledEmission(protocol.params, protocol.nextCycleId), 0)} $TUNNEL` : null],
+              ["Cycle budget", current ? `${formatTunnel(current.emissionBudget, 0)} $TUNNEL` : protocol ? `${formatTunnel(scheduledEmission(protocol.params, BigInt(protocol.totals.cycles) + 1n), 0)} $TUNNEL` : null],
               ["Reserve available", protocol ? `${formatTunnel(protocol.reserveAvailable, 0)}` : null],
-              ["Distributed so far", protocol ? `${formatTunnel(protocol.totalTokensClaimed, 0)}` : null],
+              ["Distributed so far", protocol ? `${formatTunnel(protocol.totals.tokensClaimed, 0)}` : null],
             ].map(([k, v]) => (
               <div key={k} className="bg-panel p-5">
                 <dt className="label">{k}</dt>
@@ -70,12 +70,12 @@ export function MiningCycles() {
               </defs>
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <div className="label">{current ? `Cycle ${current.id}` : upcoming ? `Cycle ${upcoming.id} upcoming` : "No open cycle"}</div>
+              <div className="label">{current ? `Cycle ${current.id}` : "No open cycle"}</div>
               <div className="mt-2 font-mono text-[44px] font-medium tabular tracking-tight sm:text-[52px]">
-                {current ? formatCountdown(current.closeTs - now) : upcoming ? formatCountdown(upcoming.openTs - now) : "--:--"}
+                {current ? formatCountdown(current.closeTs - now) : "--:--"}
               </div>
               <div className="mt-1 text-xs text-muted">
-                {current ? `${current.participants} wallets · ${current.particles.reduce((a, b) => a + b, 0n).toString()} particles` : loading ? "reading chain…" : protocol === null ? "program not initialized" : "waiting for the crank"}
+                {current ? `${current.participants} wallets · ${current.particles.reduce((a, b) => a + b, 0n).toString()} particles` : loading ? "connecting…" : !protocol ? "TUNNEL unreachable" : protocol.paused ? "mining paused" : "next cycle opening…"}
               </div>
             </div>
           </div>
@@ -119,7 +119,7 @@ export function ArchivePreview() {
             <Unavailable what="The experiment archive" />
           </div>
         ) : rows.length === 0 ? (
-          <Empty title={res.loading ? "Loading experiments…" : "No settled experiments yet"}>Experiments appear here once their cycle has been settled onchain.</Empty>
+          <Empty title={res.loading ? "Loading experiments…" : "No settled experiments yet"}>Experiments appear here once their cycle has been settled.</Empty>
         ) : (
           <table className="w-full min-w-[720px] text-sm">
             <thead>

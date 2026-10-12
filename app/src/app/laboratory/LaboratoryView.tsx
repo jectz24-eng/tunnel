@@ -89,7 +89,7 @@ export function LaboratoryView() {
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-faint">Sets V₀ and a to the {cfg.source === "chain" ? "onchain" : "launch"} barrier, at energy level E3.</p>
+              <p className="mt-2 text-[11px] text-faint">Sets V₀ and a to the {cfg.source === "chain" ? "live" : "launch"} barrier, at energy level E3.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Toggle on={components} onClick={() => setComponents((c) => !c)}>

@@ -1,15 +1,12 @@
 "use client";
 
-import { useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey } from "@solana/web3.js";
-import { BARRIER_META, LEVEL_LABELS, fetchCycle, formatMilli, formatPpb, formatTunnel, particleOutcomes, shortKey, toHex, transmissionPpb, type CycleAccount } from "@tunnel/sdk";
+import { BARRIER_META, LEVEL_LABELS, decodeBase58, formatMilli, formatPpb, formatTunnel, particleOutcomes, shortKey, transmissionPpb } from "@tunnel/sdk";
 import Link from "next/link";
 import { useMemo } from "react";
 import { Badge, Dot, Empty, Panel, PanelHeader, Unavailable } from "@/components/ui";
 import { WaveCanvas } from "@/components/physics/WaveCanvas";
 import { useIndexed } from "@/lib/api";
-import { appConfig, explorerTx } from "@/lib/config";
-import { usePoll } from "@/lib/poll";
+import { useCycle } from "@/lib/chain";
 import { useQuality } from "@/lib/quality";
 import { ParticleBits } from "../../../cycle/[id]/CycleView";
 import { STATUS_TONE, type ExperimentRow } from "../../../HistoryView";
@@ -17,22 +14,21 @@ import { STATUS_TONE, type ExperimentRow } from "../../../HistoryView";
 /** One experiment: its record, its physics, and a particle-by-particle re-derivation from the cycle's randomness. */
 export function ExperimentView({ cycle, owner, seq }: { cycle: string; owner: string; seq: string }) {
   const q = useQuality();
-  const { connection } = useConnection();
-  const res = useIndexed<{ experiment: ExperimentRow } | null>(`/api/experiments/${cycle}/${owner}/${seq}`, 15_000);
-  const chainCycle = usePoll<CycleAccount | null>(`cycle:${cycle}`, () => fetchCycle(connection, BigInt(cycle), appConfig.programId), 10_000);
+  const res = useIndexed<{ experiment: ExperimentRow & { message: string } } | null>(`/api/experiments/${cycle}/${owner}/${seq}`, 15_000);
+  const chainCycle = useCycle(BigInt(cycle));
   const e = res.data?.data?.experiment;
   const c = chainCycle.data;
 
   const recomputed = useMemo(() => {
-    if (!e || !c || !c.randomness.some((b) => b)) return null;
-    return particleOutcomes(c.randomness, c.id, new PublicKey(e.owner).toBytes(), e.barrier, e.level, e.count, e.transmissionPpb, e.firstIndex);
+    if (!e || !c || !c.randomness) return null;
+    return particleOutcomes(c.randomness, c.id, decodeBase58(e.owner), e.barrier, e.level, e.count, e.transmissionPpb, e.firstIndex);
   }, [e, c]);
   const bitsFromChain = recomputed?.map((o) => (o.success ? "1" : "0")).join("") ?? null;
   const matches = bitsFromChain != null && e?.outcomeBits != null ? bitsFromChain === e.outcomeBits : null;
 
   if (res.data && !res.data.available) return <div className="mx-auto max-w-[1400px] px-4 py-10 sm:px-6"><Unavailable what="Experiment records" /></div>;
   if (!res.data) return <Empty title="Loading experiment…" />;
-  if (!e) return <Empty title="Experiment not found">It may not be indexed yet.</Empty>;
+  if (!e) return <Empty title="Experiment not found" />;
 
   const meta = BARRIER_META[e.barrier];
   const v0 = e.heightMilli / 1000;
@@ -49,7 +45,7 @@ export function ExperimentView({ cycle, owner, seq }: { cycle: string; owner: st
             {[
               ["Wallet", <Link key="w" className="hover:text-cyan" href={`/profile/${e.owner}`}>{shortKey(e.owner, 6)}</Link>],
               ["Cycle", <Link key="c" className="hover:text-cyan" href={`/history/cycle/${e.cycleId}`}>#{e.cycleId}</Link>],
-              ["Time", e.blockTime ? new Date(e.blockTime).toLocaleString() : "—"],
+              ["Time", new Date(e.createdAt).toLocaleString()],
               ["Barrier", <span key="b" style={{ color: meta.color }}>{meta.name}</span>],
               ["Particle energy", `${LEVEL_LABELS[e.level]} · E = ${en.toFixed(3)} (${(e.energyBps / 100).toFixed(0)}% of V₀)`],
               ["Particles · energy", `${e.count} · ⚡${e.energyCost}`],
@@ -58,7 +54,7 @@ export function ExperimentView({ cycle, owner, seq }: { cycle: string; owner: st
               ["Reward per success", `${formatTunnel(BigInt(e.nominalReward))} $TUNNEL`],
               ["Outcome", e.successes == null ? "not revealed" : `${e.successes} / ${e.count} tunneled`],
               ["Reward", e.rewardTokens != null ? `${formatTunnel(BigInt(e.rewardTokens))} $TUNNEL` : "—"],
-              ["Transaction", <a key="t" className="text-cyan hover:underline" href={explorerTx(e.signature)} target="_blank" rel="noreferrer">{e.signature.slice(0, 10)}…</a>],
+              ["Wallet signature", <span key="t" title={e.signature}>{e.signature.slice(0, 12)}…</span>],
             ].map(([k, val]) => (
               <div key={String(k)} className="bg-panel px-5 py-4">
                 <dt className="label">{k}</dt>
@@ -81,7 +77,7 @@ export function ExperimentView({ cycle, owner, seq }: { cycle: string; owner: st
             <ParticleBits bits={e.outcomeBits} count={e.count} />
             <div className="space-y-2.5 text-sm">
               <Row ok={physicsPpb != null && Math.abs(physicsPpb - e.transmissionPpb) <= 1} label="Probability = physics model of this barrier" />
-              <Row ok={matches} label={matches == null ? "Waiting for the cycle's randomness" : `Re-derived ${e.count} draws from chain randomness (indices ${e.firstIndex}–${e.firstIndex + e.count - 1})`} />
+              <Row ok={matches} label={matches == null ? "Waiting for the cycle's randomness" : `Re-derived ${e.count} draws from the cycle randomness (indices ${e.firstIndex}–${e.firstIndex + e.count - 1})`} />
             </div>
             {recomputed && (
               <div className="max-h-56 overflow-y-auto rounded-lg border border-line-soft bg-bg-2/60">
@@ -99,8 +95,8 @@ export function ExperimentView({ cycle, owner, seq }: { cycle: string; owner: st
               </div>
             )}
             <p className="text-[11px] leading-relaxed text-faint">
-              Each draw is the first 8 bytes of sha256(&quot;TUNNEL/particle/v2&quot; ‖ randomness ‖ cycle ‖ wallet ‖ barrier ‖ level ‖ index); a particle
-              tunnels when the draw is below ⌊p·2⁶⁴⌋. {c && c.randomness.some((b) => b) && <>Randomness: {toHex(c.randomness).slice(0, 18)}…</>}
+              Each draw is the first 8 bytes of sha256(&quot;TUNNEL/particle/v3&quot; ‖ randomness ‖ cycle ‖ wallet ‖ barrier ‖ level ‖ index); a particle
+              tunnels when the draw is below ⌊p·2⁶⁴⌋. {c?.randomnessHex && <>Randomness: {c.randomnessHex.slice(0, 18)}…</>}
             </p>
           </div>
         </Panel>

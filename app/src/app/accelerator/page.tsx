@@ -3,7 +3,7 @@ import { AcceleratorApp } from "@/components/accelerator/AcceleratorApp";
 
 export const metadata: Metadata = {
   title: "Accelerator",
-  description: "Configure particles, choose a barrier and deploy them into the TUNNEL accelerator. Free energy every cycle; outcomes settle onchain.",
+  description: "Configure particles, choose a barrier and deploy them into the TUNNEL accelerator. Free energy every cycle; sign a message to mine, no fees.",
 };
 
 export default function AcceleratorPage() {

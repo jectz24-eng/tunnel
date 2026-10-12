@@ -142,7 +142,7 @@ export function LeaderboardView() {
             )}
           </Panel>
           <p className="mt-4 text-xs text-muted">
-            Rankings are recomputed from settled onchain positions (never incremented), so they cannot drift. Streak = consecutive cycles, each with at
+            Rankings are recomputed from settled positions (never incremented), so they cannot drift. Streak = consecutive cycles, each with at
             least one tunnel. Rewards include claimable amounts from finalized cycles. {data ? `${data.total} ranked wallets.` : ""}
           </p>
         </>

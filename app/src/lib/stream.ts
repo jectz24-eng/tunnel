@@ -6,18 +6,16 @@ import { getJson } from "./api";
 export interface ActivityEvent {
   id: string;
   name: string;
-  signature: string;
   cycleId: string | null;
   owner: string | null;
-  blockTime: string | null;
-  commitment: string;
+  createdAt: string;
   data: Record<string, any>;
 }
 
 /**
  * Live protocol events: seeds from /api/activity, then follows /api/stream
  * (SSE, auto-reconnecting with Last-Event-ID). `available=false` means the
- * indexer is not running — the UI says so rather than showing an empty feed.
+ * service is unreachable — the UI says so rather than showing an empty feed.
  * `onLive` fires only for events that arrive after the page loaded.
  */
 export function useActivity(limit = 30, onLive?: (e: ActivityEvent) => void) {

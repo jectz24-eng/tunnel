@@ -1,14 +1,12 @@
 "use client";
 
-import { useConnection } from "@solana/wallet-adapter-react";
-import { BARRIER_META, LEVEL_LABELS, fetchCycle, formatMilli, formatPpb, formatTunnel, oraoRandomnessPda, shortKey, toHex, verifyOdds, type CycleAccount } from "@tunnel/sdk";
+import { BARRIER_META, LEVEL_LABELS, formatMilli, formatPpb, formatTunnel, shortKey, verifyOdds } from "@tunnel/sdk";
 import Link from "next/link";
 import { Badge, Dot, Empty, Panel, PanelHeader, Unavailable, Val } from "@/components/ui";
 import { useIndexed } from "@/lib/api";
-import { useChainClock } from "@/lib/chain";
-import { appConfig, explorerAddress } from "@/lib/config";
+import { useChainClock, useCycle } from "@/lib/chain";
+import { explorerBlock } from "@/lib/config";
 import { displayStatus, outcomeLabel, statusTone, useCycleVerification } from "@/lib/cycle";
-import { usePoll } from "@/lib/poll";
 import type { ExperimentRow } from "../../HistoryView";
 import { STATUS_TONE } from "../../HistoryView";
 
@@ -19,29 +17,26 @@ interface PositionRow {
   energyUsed: number;
   experiments: number;
   settled: boolean;
-  claimed: boolean;
   nominalReward: string;
-  tokensPaid: string;
-  expectedTokens: string | null;
-  claimSignature: string | null;
+  payout: string | null;
+  payoutStatus: string | null;
 }
 
-/** One cycle: onchain state, randomness proof, in-browser verification, and every position and experiment. */
+/** One cycle: its state, fairness proof, in-browser verification, and every position and experiment. */
 export function CycleView({ id }: { id: string }) {
-  const { connection } = useConnection();
   const { now } = useChainClock(1000);
-  const cycle = usePoll<CycleAccount | null>(`cycle:${id}`, () => fetchCycle(connection, BigInt(id), appConfig.programId), 5_000);
+  const cycle = useCycle(BigInt(id));
   const verification = useCycleVerification(cycle.data ?? null);
   const indexed = useIndexed<{ positions: PositionRow[]; experiments: ExperimentRow[] } | null>(`/api/cycles/${id}`, 10_000);
   const c = cycle.data;
 
-  if (cycle.loading && c === undefined) return <Empty title="Reading cycle from chain…" />;
-  if (!c) return <Empty title={`Cycle #${id} does not exist on ${appConfig.cluster}`}>It may not have been opened yet.</Empty>;
+  if (c === undefined) return <Empty title="Loading cycle…" />;
+  if (!c) return <Empty title={`Cycle #${id} does not exist`}>It may not have been opened yet.</Empty>;
 
   const st = displayStatus(c, now);
   const v = verification.data?.verification;
   const oddsOk = verifyOdds(c);
-  const revealed = c.randomness.some((b) => b !== 0);
+  const revealed = !!c.randomness;
   const positions = indexed.data?.data?.positions ?? [];
   const experiments = indexed.data?.data?.experiments ?? [];
 
@@ -59,7 +54,7 @@ export function CycleView({ id }: { id: string }) {
               ["Tunnels L / M / H", c.successes.join(" / ")],
               ["Particles L / M / H", c.particles.join(" / ")],
               ["Emission budget", formatTunnel(c.emissionBudget)],
-              ["Allocated · claimed", `${formatTunnel(c.tokensAllocated)} · ${formatTunnel(c.tokensClaimed)}`],
+              ["Allocated", formatTunnel(c.tokensAllocated)],
             ].map(([k, val]) => (
               <div key={String(k)} className="bg-panel px-5 py-4">
                 <dt className="label">{k}</dt>
@@ -107,7 +102,7 @@ export function CycleView({ id }: { id: string }) {
         </Panel>
 
         <Panel className="overflow-hidden">
-          <PanelHeader title="Positions" right={<span className="font-mono text-[10.5px] text-faint">indexed · claimed positions are rebuilt from events</span>} />
+          <PanelHeader title="Positions" />
           {indexed.data && !indexed.data.available ? (
             <div className="p-4">
               <Unavailable what="Position history" />
@@ -128,7 +123,7 @@ export function CycleView({ id }: { id: string }) {
                 </thead>
                 <tbody>
                   {positions.map((p) => {
-                    const verified = v?.positions.find((x) => x.owner === p.owner);
+                    const verified = v?.positions.find((x) => x.wallet === p.owner);
                     return (
                       <tr key={p.owner} className="border-b border-line-soft last:border-0">
                         <td className="px-5 py-2.5 font-mono text-xs">
@@ -140,8 +135,10 @@ export function CycleView({ id }: { id: string }) {
                         <td className="px-5 py-2.5 font-mono text-xs">{p.experiments}</td>
                         <td className="px-5 py-2.5 font-mono text-xs">{p.particles.reduce((a, b) => a + b, 0)}</td>
                         <td className="px-5 py-2.5 font-mono text-xs">{p.settled ? p.successes.reduce((a, b) => a + b, 0) : "—"}</td>
-                        <td className="px-5 py-2.5 font-mono text-xs">{p.claimed ? formatTunnel(BigInt(p.tokensPaid)) : p.expectedTokens != null ? formatTunnel(BigInt(p.expectedTokens)) : "—"}</td>
-                        <td className="px-5 py-2.5 font-mono text-xs">{p.claimed ? <span className="text-ion">claimed</span> : <span className="text-faint">open</span>}</td>
+                        <td className="px-5 py-2.5 font-mono text-xs">{p.payout != null ? formatTunnel(BigInt(p.payout)) : "—"}</td>
+                        <td className="px-5 py-2.5 font-mono text-xs">
+                          {p.payoutStatus === "confirmed" ? <span className="text-ion">paid</span> : p.payoutStatus ? <span className="text-cyan">{p.payoutStatus}</span> : <span className="text-faint">{p.payout && p.payout !== "0" ? "unclaimed" : "—"}</span>}
+                        </td>
                       </tr>
                     );
                   })}
@@ -154,7 +151,7 @@ export function CycleView({ id }: { id: string }) {
         <Panel className="overflow-hidden">
           <PanelHeader title="Experiments" />
           {experiments.length === 0 ? (
-            <Empty title={indexed.loading ? "Loading…" : "No experiments indexed for this cycle"} />
+            <Empty title={indexed.loading ? "Loading…" : "No experiments in this cycle"} />
           ) : (
             <ul className="divide-y divide-line-soft">
               {experiments.map((e) => (
@@ -181,27 +178,36 @@ export function CycleView({ id }: { id: string }) {
           <PanelHeader title="Independent verification" />
           <div className="space-y-3 p-5 text-sm">
             <Check ok={oddsOk} label="Odds table = physics model applied to the snapshotted barriers" />
-            <Check ok={revealed ? (v ? v.positions.every((p) => p.matches) : null) : null} label={revealed ? `Every open position's outcomes recomputed from the randomness (${v?.positions.length ?? "…"} checked)` : "Randomness not revealed yet"} />
-            <Check ok={c.status === "settled" ? (v ? v.totalNominalMatches : null) : null} label="Σ nominal rewards matches the program total (when no position has closed)" />
+            <Check ok={c.serverSeed ? (v ? v.commitmentMatches : null) : null} label={c.serverSeed ? "Revealed seed matches the commitment published when the cycle opened" : "The seed is revealed after settlement"} />
+            <Check ok={revealed ? (v ? v.randomnessMatches : null) : null} label="Randomness = sha512(seed ‖ Solana blockhash ‖ cycle)" />
+            <Check ok={revealed ? (v ? v.positions.every((p) => p.matches) : null) : null} label={revealed ? `Every position's outcomes and payout recomputed (${v?.positions.length ?? "…"} checked)` : "Outcomes not settled yet"} />
+            <Check ok={c.status === "settled" ? (v ? v.totalNominalMatches : null) : null} label="Σ nominal rewards matches the published total" />
             <p className="pt-2 text-[11.5px] leading-relaxed text-muted">
-              Verification runs in your browser with the open-source SDK against the onchain Cycle and Position accounts. Claimed positions are closed
-              onchain; their settled values remain in the program&apos;s event log.
+              Verification runs in your browser with the open-source SDK. Check the entropy block on any Solana explorer: its hash did not exist until
+              after this cycle stopped accepting particles.
             </p>
           </div>
         </Panel>
         <Panel>
-          <PanelHeader title="Randomness proof · ORAO VRF" />
+          <PanelHeader title="Fairness proof" />
           <dl className="space-y-3 p-5 font-mono text-[11px]">
             <div>
-              <dt className="label">VRF seed (fixed at close)</dt>
-              <dd className="mt-1 break-all text-fg-2">{c.vrfSeed.some((b) => b) ? toHex(c.vrfSeed) : "—"}</dd>
+              <dt className="label">Seed commitment (published at open)</dt>
+              <dd className="mt-1 break-all text-fg-2">{c.seedCommitment}</dd>
             </div>
             <div>
-              <dt className="label">ORAO request account</dt>
+              <dt className="label">Server seed (revealed after settlement)</dt>
+              <dd className="mt-1 break-all text-fg-2">
+                <Val v={c.serverSeed} />
+              </dd>
+            </div>
+            <div>
+              <dt className="label">Entropy slot (committed at open) → block used</dt>
               <dd className="mt-1 break-all">
-                {c.vrfSeed.some((b) => b) ? (
-                  <a className="text-cyan hover:underline" href={explorerAddress(oraoRandomnessPda(c.vrfSeed).toBase58())} target="_blank" rel="noreferrer">
-                    {oraoRandomnessPda(c.vrfSeed).toBase58()}
+                {c.entropySlot.toString()} →{" "}
+                {c.entropySlotUsed != null ? (
+                  <a className="text-cyan hover:underline" href={explorerBlock(c.entropySlotUsed)} target="_blank" rel="noreferrer">
+                    {c.entropySlotUsed.toString()}
                   </a>
                 ) : (
                   "—"
@@ -209,17 +215,15 @@ export function CycleView({ id }: { id: string }) {
               </dd>
             </div>
             <div>
-              <dt className="label">Randomness (64 bytes)</dt>
+              <dt className="label">Solana blockhash</dt>
               <dd className="mt-1 break-all text-fg-2">
-                <Val v={revealed ? toHex(c.randomness) : null} />
+                <Val v={c.entropyBlockhash} />
               </dd>
             </div>
             <div>
-              <dt className="label">Cycle account</dt>
-              <dd className="mt-1 break-all">
-                <a className="text-cyan hover:underline" href={explorerAddress(c.address.toBase58())} target="_blank" rel="noreferrer">
-                  {c.address.toBase58()}
-                </a>
+              <dt className="label">Randomness (64 bytes)</dt>
+              <dd className="mt-1 break-all text-fg-2">
+                <Val v={c.randomnessHex} />
               </dd>
             </div>
           </dl>

@@ -10,7 +10,7 @@ export interface ProtocolConfigView {
   odds: OddsTable;
   energyPerCycle: number;
   cycleDurationSecs: number;
-  /** "chain" = read from the deployed Protocol account; "launch" = the default parameters (program not reachable/initialized). */
+  /** "chain" = live server configuration; "launch" = the default parameters (server not reachable). */
   source: "chain" | "launch";
   loading: boolean;
 }
@@ -18,8 +18,8 @@ export interface ProtocolConfigView {
 const LAUNCH_ODDS = deriveOdds(DEFAULT_PARAMS);
 
 /**
- * Barrier configuration and odds for display. Values come from the onchain
- * Protocol account; until it is reachable the UI shows the launch parameters
+ * Barrier configuration and odds for display. Values come from the live
+ * server configuration; until it is reachable the UI shows the launch parameters
  * and labels them as such (never as live values).
  */
 export function useProtocolConfig(): ProtocolConfigView {

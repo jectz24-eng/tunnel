@@ -4,7 +4,7 @@ import { TokenomicsView } from "./TokenomicsView";
 
 export const metadata: Metadata = {
   title: "Tokenomics",
-  description: "$TUNNEL supply, the emissions reserve, cycle budgets, claimed rewards, onchain addresses, and the risks of a probabilistic protocol.",
+  description: "$TUNNEL supply, the emissions reserve, cycle budgets, claimed rewards, addresses, and the risks of a probabilistic protocol.",
 };
 
 const SECTIONS: [string, string, string][] = [

@@ -4,7 +4,7 @@ import { experiments } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
 
-const STATUSES = new Set(["pending", "awaiting_randomness", "settled", "void", "claimed"]);
+const STATUSES = new Set(["pending", "settled", "void", "claimed"]);
 
 /** Global experiment archive: search, filters and pagination over indexed attempts. */
 export function GET(req: NextRequest) {

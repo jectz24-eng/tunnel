@@ -8,7 +8,7 @@ export default function AdminPage() {
   return (
     <>
       <PageHeader eyebrow="Operations · admin only" title={<>Control room.</>}>
-        Cycles, settlements, randomness, emissions and failed jobs. Every control is an onchain instruction the program authorizes against the admin key.
+        Cycles, settlements, payouts and the audit log. Only wallets listed in ADMIN_WALLETS can sign in here; every change is logged.
       </PageHeader>
       <AdminView />
     </>

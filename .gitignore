@@ -29,3 +29,5 @@ packages/db/src/generated/
 *.tmp.mjs
 app/shots/
 .pgdata-v1/
+deployments/localnet.json
+.pgdata-v2/

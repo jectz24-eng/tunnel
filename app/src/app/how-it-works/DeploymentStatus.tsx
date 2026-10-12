@@ -1,23 +1,31 @@
 "use client";
 
-import { isGatekeeperEnabled } from "@tunnel/sdk";
 import { useDetectedCluster, useProtocol } from "@/lib/chain";
 import { appConfig, clusterLabel, explorerAddress } from "@/lib/config";
 
-/** Live deployment facts read from the configured cluster. */
+const link = (v: string | null | undefined) =>
+  v ? (
+    <a href={explorerAddress(v)} target="_blank" rel="noreferrer">
+      {v}
+    </a>
+  ) : (
+    "—"
+  );
+
+/** Live deployment facts. */
 export function DeploymentStatus() {
   const protocol = useProtocol();
   const cluster = useDetectedCluster();
   const p = protocol.data;
   const rows: [string, React.ReactNode][] = [
-    ["Configured cluster", clusterLabel[appConfig.cluster]],
+    ["Token network", clusterLabel[appConfig.cluster]],
     ["RPC reports", cluster.data ?? (cluster.error ? "unreachable" : "…")],
-    ["Program", <a key="p" href={explorerAddress(appConfig.programId.toBase58())} target="_blank" rel="noreferrer">{appConfig.programId.toBase58()}</a>],
-    ["Initialized", protocol.loading && p === undefined ? "…" : p ? "yes" : protocol.error ? "unknown (RPC error)" : "no"],
-    ["Admin", p ? <a key="a" href={explorerAddress(p.admin.toBase58())} target="_blank" rel="noreferrer">{p.admin.toBase58()}</a> : "—"],
-    ["$TUNNEL mint", p ? <a key="m" href={explorerAddress(p.tunnelMint.toBase58())} target="_blank" rel="noreferrer">{p.tunnelMint.toBase58()}</a> : "—"],
-    ["Gatekeeper co-signing", p ? (isGatekeeperEnabled(p) ? "required" : "off") : "—"],
-    ["Paused", p ? (p.paused ? "yes" : "no") : "—"],
+    ["TUNNEL server", protocol.loading && p === undefined ? "…" : p ? "online" : "unreachable"],
+    ["Cycle engine", p ? (p.engineOnline ? "running" : "offline") : "—"],
+    ["$TUNNEL mint", link(p?.tunnelMint)],
+    ["Reward wallet", link(p?.rewardWallet)],
+    ["Mining", p ? (p.paused ? "paused" : "running") : "—"],
+    ["Smart contract", "none: game logic runs on the TUNNEL server; rewards are real SPL transfers"],
     ["Independent audit", "not performed"],
   ];
   return (

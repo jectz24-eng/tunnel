@@ -25,7 +25,7 @@ const ease = [0.16, 1, 0.3, 1] as const;
 /**
  * Hero: a full-screen opening with the 3D accelerator (pointer parallax, no
  * scroll choreography), labels pinned to its parts, and a strip of live
- * onchain figures. The animation itself is a visual simulation, labelled as such.
+ * live figures. The animation itself is a visual simulation, labelled as such.
  */
 export function Hero() {
   const q = useQuality();
@@ -122,18 +122,18 @@ export function Hero() {
   );
 }
 
-/** Live onchain figures; dashes (not zeros) when the chain is unreachable. */
+/** Live protocol figures; dashes (not zeros) when TUNNEL is unreachable. */
 function LiveStrip() {
   const { now } = useChainClock(1000);
-  const cycles = useCycles(3);
+  const cycles = useCycles();
   const p = cycles.protocol.data;
   const { current } = splitCycles(cycles.data, now);
   const items: [string, string | null, boolean?][] = [
     ["Current cycle", current ? `#${current.id}` : null],
     ["Closes in", current ? formatCountdown(current.closeTs - now) : null, true],
     ["Wallets this cycle", current ? String(current.participants) : null],
-    ["Particles deployed", p ? p.totalParticles.toLocaleString() : null],
-    ["Successful tunnels", p ? p.totalSuccesses.toLocaleString() : null],
+    ["Particles deployed", p ? p.totals.particles.toLocaleString() : null],
+    ["Successful tunnels", p ? p.totals.successes.toLocaleString() : null],
     ["Emissions reserve", p ? `${formatTunnel(p.reserveAvailable, 0)}` : null],
   ];
   return (

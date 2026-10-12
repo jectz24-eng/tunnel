@@ -26,7 +26,8 @@
     "recharts": "3.10.1",
     "server-only": "^0.0.1",
     "three": "0.186.1",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "@tunnel/core": "*"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",

@@ -11,9 +11,10 @@ export interface ExperimentRow {
   cycleId: string;
   owner: string;
   seq: number;
+  id: string;
+  /** The wallet's ed25519 signature over the deployment message. */
   signature: string;
-  slot: string;
-  blockTime: string | null;
+  createdAt: string;
   barrier: number;
   level: number;
   count: number;
@@ -32,7 +33,6 @@ export interface ExperimentRow {
 
 export const STATUS_TONE: Record<string, "neutral" | "cyan" | "violet" | "flare" | "amber" | "red" | "ion"> = {
   pending: "cyan",
-  awaiting_randomness: "violet",
   settled: "flare",
   claimed: "ion",
   void: "red",
@@ -83,7 +83,7 @@ export function HistoryView({ owner }: { owner?: string }) {
         <div className="flex flex-wrap gap-2">
           <Select label="Barrier" value={barrier} onChange={setBarrier} options={[["", "All barriers"], ["0", "Low"], ["1", "Medium"], ["2", "High"]]} />
           <Select label="Outcome" value={outcome} onChange={setOutcome} options={[["", "All outcomes"], ["tunneled", "Tunneled"], ["reflected", "Reflected"]]} />
-          <Select label="Status" value={status} onChange={setStatus} options={[["", "Any status"], ["pending", "Pending"], ["awaiting_randomness", "Awaiting randomness"], ["settled", "Settled"], ["claimed", "Claimed"], ["void", "Void"]]} />
+          <Select label="Status" value={status} onChange={setStatus} options={[["", "Any status"], ["pending", "Pending"], ["settled", "Settled"], ["claimed", "Claimed"], ["void", "Void"]]} />
         </div>
       </div>
       {res.data && !res.data.available ? (
@@ -123,7 +123,7 @@ export function HistoryView({ owner }: { owner?: string }) {
                     <Link href={`/history/cycle/${r.cycleId}`} className="text-fg-2 hover:text-cyan">
                       #{r.cycleId}
                     </Link>{" "}
-                    · {r.blockTime ? new Date(r.blockTime).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                    · {new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">
                     <span style={{ color: BARRIER_META[r.barrier].color }}>{BARRIER_META[r.barrier].short}</span>

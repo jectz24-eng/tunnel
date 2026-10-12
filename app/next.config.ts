@@ -9,7 +9,7 @@ const securityHeaders = [
 
 const config: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@tunnel/sdk", "@tunnel/db"],
+  transpilePackages: ["@tunnel/sdk", "@tunnel/db", "@tunnel/core"],
   serverExternalPackages: ["pg", "@prisma/adapter-pg", "@prisma/client"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

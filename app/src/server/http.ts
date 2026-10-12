@@ -11,17 +11,17 @@ export function json(data: unknown, init?: ResponseInit) {
 }
 
 /**
- * Runs an indexed-data query. When no database is configured or it is
- * unreachable, responds `{ available: false }` — the UI then says the indexer
+ * Runs a database query. When no database is configured or it is
+ * unreachable, responds `{ available: false }` — the UI then says the service
  * is unavailable instead of showing zeroes.
  */
 export async function indexed<T>(fn: (db: ReturnType<typeof getDb>) => Promise<T>) {
-  if (!hasDatabase()) return json({ available: false, reason: "indexer not configured" });
+  if (!hasDatabase()) return json({ available: false, reason: "database not configured" });
   try {
     return json({ available: true, data: await fn(getDb()) });
   } catch (e) {
     console.error("[api] indexed query failed", e);
-    return json({ available: false, reason: "indexer unavailable" }, { status: 200 });
+    return json({ available: false, reason: "database unavailable" }, { status: 200 });
   }
 }
 

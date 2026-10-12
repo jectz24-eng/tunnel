@@ -1,24 +1,19 @@
 "use client";
 
-import { useConnection } from "@solana/wallet-adapter-react";
-import { fetchCyclePositions, verifyCycle, type CycleAccount } from "@tunnel/sdk";
-import { appConfig } from "./config";
+import { verifyCycle } from "@tunnel/sdk";
+import { getJson } from "./api";
 import { usePoll } from "./poll";
+import { parsePosition, type CycleAccount } from "./types";
 
-export type DisplayStatus = "UPCOMING" | "OPEN" | "CLOSING" | "AWAITING RANDOMNESS" | "RESOLVING" | "SETTLED" | "VOID";
+export type DisplayStatus = "OPEN" | "CLOSING" | "AWAITING ENTROPY" | "SETTLED" | "VOID";
 
-/** Maps onchain status + chain clock to the user-facing cycle states. */
+/** Maps server status + server clock to the user-facing cycle states. */
 export function displayStatus(c: CycleAccount, now: number): DisplayStatus {
   switch (c.status) {
     case "open":
-      if (now < c.openTs) return "UPCOMING";
       return now < c.closeTs ? "OPEN" : "CLOSING";
     case "closed":
-      return "CLOSING";
-    case "awaitingRandomness":
-      return "AWAITING RANDOMNESS";
-    case "resolving":
-      return "RESOLVING";
+      return "AWAITING ENTROPY";
     case "settled":
       return "SETTLED";
     case "void":
@@ -27,11 +22,9 @@ export function displayStatus(c: CycleAccount, now: number): DisplayStatus {
 }
 
 export const statusTone: Record<DisplayStatus, "cyan" | "flare" | "amber" | "violet" | "red" | "neutral" | "ion"> = {
-  UPCOMING: "neutral",
   OPEN: "cyan",
   CLOSING: "amber",
-  "AWAITING RANDOMNESS": "violet",
-  RESOLVING: "ion",
+  "AWAITING ENTROPY": "violet",
   SETTLED: "flare",
   VOID: "red",
 };
@@ -40,7 +33,7 @@ export const outcomeLabel: Record<CycleAccount["outcome"], string> = {
   pending: "Pending",
   rewards: "Particles tunneled",
   noTunnels: "All reflected",
-  void: "Void · randomness timeout",
+  void: "Void · not settled",
   empty: "No participants",
 };
 
@@ -51,18 +44,35 @@ export function formatCountdown(seconds: number) {
 }
 
 /**
- * Re-verifies a settled cycle in the browser: recomputes every open
- * position's particle outcomes from the onchain randomness and checks them,
- * the payouts and the odds table (against the physics model) with the SDK.
+ * Re-verifies a settled cycle in the browser: checks the revealed seed against
+ * the commitment published at open, re-derives the randomness from the seed
+ * and the Solana blockhash, recomputes every particle and payout, and checks
+ * the odds table against the physics model.
  */
 export function useCycleVerification(cycle: CycleAccount | null) {
-  const { connection } = useConnection();
-  const ready = cycle && (cycle.status === "settled" || cycle.status === "resolving") && cycle.participants > 0;
+  const ready = cycle && cycle.status === "settled" && cycle.participants > 0;
   return usePoll(
-    ready ? `verify:${cycle!.id}:${cycle!.status}:${cycle!.claims}` : null,
+    ready ? `verify:${cycle!.id}` : null,
     async () => {
-      const positions = await fetchCyclePositions(connection, cycle!.id, appConfig.programId);
-      return { positions, verification: verifyCycle(cycle!, positions) };
+      const r = await getJson<{ positions: Record<string, unknown>[] }>(`/api/cycles/${cycle!.id}`);
+      const positions = (r.data?.positions ?? []).map(parsePosition);
+      const verification = verifyCycle(
+        {
+          id: cycle!.id,
+          barriers: cycle!.barriers,
+          levels: cycle!.levels,
+          odds: cycle!.odds,
+          emissionBudget: cycle!.emissionBudget,
+          totalNominal: cycle!.totalNominal,
+          outcome: cycle!.outcome,
+          seedCommitment: cycle!.seedCommitment,
+          serverSeed: cycle!.serverSeed,
+          entropyBlockhash: cycle!.entropyBlockhash,
+          randomness: cycle!.randomnessHex,
+        },
+        positions.map((p) => ({ wallet: p.owner, particles: p.particles, successes: p.successes, nominalReward: p.nominalReward, payout: p.payout })),
+      );
+      return { positions, verification };
     },
     60_000,
   );

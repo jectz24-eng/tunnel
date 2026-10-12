@@ -1,25 +1,21 @@
 /**
- * One-shot LOCALNET bootstrap (validator from scripts/local-validator.sh must be running):
- *   - airdrops local SOL to the operator and keeper
- *   - initialises a local ORAO VRF network state whose fulfillment authority is
- *     keys/localnet-vrf-authority.json (served by scripts/local-vrf-fulfiller.ts)
- *   - creates $TUNNEL (placeholder supply), initialises the protocol, funds the reserve
+ * One-shot LOCALNET bootstrap (a plain `solana-test-validator` must be running):
+ *   - creates keys/localnet-{operator,reward-wallet}.json and airdrops local SOL
+ *   - creates $TUNNEL (placeholder supply) and moves the placeholder reserve to the reward wallet
+ *   - records the reserve, sets the cycle length, and resumes mining in the database
  *
- *   SOLANA_RPC_URL=http://127.0.0.1:8899 npx tsx scripts/local-setup.ts [--cycle-secs 120] [--gatekeeper]
+ *   SOLANA_RPC_URL=http://127.0.0.1:8899 DATABASE_URL=... npx tsx scripts/local-setup.ts [--cycle-secs 120]
  *
- * `--gatekeeper` creates keys/localnet-gatekeeper.json and requires every
- * deployment to be co-signed by it (the app's /api/gatekeeper route signs
- * after rate-limit checks when GATEKEEPER_KEYPAIR points at that file).
+ * Then run the engine with REWARD_WALLET_KEYPAIR=keys/localnet-reward-wallet.json and TUNNEL_MINT=<printed mint>.
  */
-import { AnchorProvider, Wallet } from "@coral-xyz/anchor";
-import BN from "bn.js";
-import { InitBuilder, Orao, networkStateAccountAddress } from "@orao-network/solana-vrf";
-import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
+import { createMint, getOrCreateAssociatedTokenAccount, mintTo, transferChecked } from "@solana/spl-token";
 import { Keypair, LAMPORTS_PER_SOL, PublicKey, type Connection } from "@solana/web3.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_PARAMS, PLACEHOLDER_TOKENOMICS, TUNNEL_DECIMALS, TunnelInstructions, fetchProtocol, protocolPda, rewardVaultPda } from "../packages/sdk/src";
-import { PHYSICS_CU, ROOT, arg, connection, guardCluster, sendIxs, writeDeployment } from "./lib";
+import { ensureConfig, loadConfig, recordReserveFunding, setParams, setPaused } from "../packages/core/src";
+import { getDb } from "../packages/db/src";
+import { PLACEHOLDER_TOKENOMICS, TUNNEL_DECIMALS } from "../packages/sdk/src";
+import { ROOT, arg, connection, guardCluster, readDeployment, writeDeployment } from "./lib";
 
 export function localKey(name: string): Keypair {
   const dir = join(ROOT, "keys");
@@ -33,69 +29,40 @@ export function localKey(name: string): Keypair {
 
 async function airdrop(conn: Connection, to: PublicKey, sol: number) {
   const sig = await conn.requestAirdrop(to, sol * LAMPORTS_PER_SOL);
-  const bh = await conn.getLatestBlockhash();
-  await conn.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+  await conn.confirmTransaction({ signature: sig, ...(await conn.getLatestBlockhash()) }, "confirmed");
 }
 
 async function main() {
   const conn = connection();
-  const cluster = await guardCluster(conn);
-  if (cluster !== "localnet") throw new Error("local-setup only runs against a local validator");
+  if ((await guardCluster(conn)) !== "localnet") throw new Error("local-setup only runs against a local validator");
+  const db = getDb();
+  await ensureConfig(db);
   const operator = localKey("operator");
-  const keeper = localKey("keeper");
-  const vrfAuthority = localKey("vrf-authority");
-  const vrfTreasury = localKey("vrf-treasury");
-  const gatekeeper = process.argv.includes("--gatekeeper") ? localKey("gatekeeper") : null;
+  const reward = localKey("reward-wallet");
+  for (const k of [operator, reward]) await airdrop(conn, k.publicKey, 20);
+  console.log(`operator ${operator.publicKey.toBase58()} · reward wallet ${reward.publicKey.toBase58()}`);
 
-  for (const k of [operator, keeper, vrfAuthority, vrfTreasury]) await airdrop(conn, k.publicKey, 100);
-  console.log(`operator ${operator.publicKey.toBase58()} · keeper ${keeper.publicKey.toBase58()}`);
-
-  // Local ORAO network: the real ORAO program (cloned), our own fulfillment key.
-  const vrf = new Orao(new AnchorProvider(conn, new Wallet(operator), { commitment: "confirmed" }));
-  if (!(await conn.getAccountInfo(networkStateAccountAddress()))) {
-    await new InitBuilder(vrf, operator.publicKey, vrfTreasury.publicKey, [vrfAuthority.publicKey], new BN(1_000_000)).rpc();
-    console.log("ORAO local network state initialised (fee 0.001 SOL)");
+  let mintAddr = readDeployment("localnet").tunnelMint;
+  if (!mintAddr || !readDeployment("localnet").rewardWallet || !(await conn.getAccountInfo(new PublicKey(mintAddr)))) {
+    const mint = await createMint(conn, operator, operator.publicKey, null, TUNNEL_DECIMALS);
+    const from = await getOrCreateAssociatedTokenAccount(conn, operator, mint, operator.publicKey);
+    await mintTo(conn, operator, mint, from.address, operator, PLACEHOLDER_TOKENOMICS.totalSupply);
+    const to = await getOrCreateAssociatedTokenAccount(conn, operator, mint, reward.publicKey);
+    const sig = await transferChecked(conn, operator, from.address, mint, to.address, operator, PLACEHOLDER_TOKENOMICS.miningReserve, TUNNEL_DECIMALS);
+    await recordReserveFunding(db, PLACEHOLDER_TOKENOMICS.miningReserve, sig, operator.publicKey.toBase58());
+    mintAddr = mint.toBase58();
+    writeDeployment("localnet", { tunnelMint: mintAddr, rewardWallet: reward.publicKey.toBase58(), operator: operator.publicKey.toBase58() });
+    console.log(`$TUNNEL mint ${mintAddr}; placeholder reserve moved to the reward wallet and recorded`);
   }
 
-  const tunnel = new TunnelInstructions();
-  if (await fetchProtocol(conn, tunnel.programId)) {
-    console.log("protocol already initialised — nothing else to do");
-    return;
-  }
-  const mint = await createMint(conn, operator, operator.publicKey, null, TUNNEL_DECIMALS);
-  const ata = await getOrCreateAssociatedTokenAccount(conn, operator, mint, operator.publicKey);
-  await mintTo(conn, operator, mint, ata.address, operator, PLACEHOLDER_TOKENOMICS.totalSupply);
-  console.log(`$TUNNEL mint ${mint.toBase58()} (placeholder supply minted to operator)`);
-
-  const params = { ...DEFAULT_PARAMS, cycleDurationSecs: Number(arg("cycle-secs") ?? 120) };
-  await sendIxs(
-    conn,
-    operator,
-    [tunnel.initialize({ admin: operator.publicKey, tunnelMint: mint, gatekeeper: gatekeeper?.publicKey ?? PublicKey.default, params })],
-    [],
-    PHYSICS_CU,
-  );
-  await sendIxs(conn, operator, [
-    tunnel.fundReserve({ funder: operator.publicKey, tunnelMint: mint, funderTokenAccount: ata.address, amount: PLACEHOLDER_TOKENOMICS.miningReserve }),
-  ]);
-  console.log(`protocol initialised (cycle ${params.cycleDurationSecs}s${gatekeeper ? ", gatekeeper on" : ""}); placeholder reserve funded`);
-
-  writeDeployment("localnet", {
-    programId: tunnel.programId.toBase58(),
-    protocol: protocolPda().toBase58(),
-    rewardVault: rewardVaultPda().toBase58(),
-    tunnelMint: mint.toBase58(),
-    operatorTokenAccount: ata.address.toBase58(),
-    admin: operator.publicKey.toBase58(),
-    keeper: keeper.publicKey.toBase58(),
-    gatekeeper: (gatekeeper?.publicKey ?? PublicKey.default).toBase58(),
-    vrfFulfillmentAuthority: vrfAuthority.publicKey.toBase58(),
-  });
+  const cfg = await loadConfig(db);
+  await setParams(db, { ...cfg.params, cycleDurationSecs: Number(arg("cycle-secs") ?? 120) }, "local-setup");
+  await setPaused(db, false, "local-setup");
+  console.log(`\nengine env:\n  REWARD_WALLET_KEYPAIR=${join(ROOT, "keys", "localnet-reward-wallet.json")}\n  TUNNEL_MINT=${mintAddr}`);
+  process.exit(0);
 }
 
-if (process.argv[1]?.endsWith("local-setup.ts")) {
-  main().catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
-}
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

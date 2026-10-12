@@ -1,24 +1,25 @@
 "use client";
 
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { BARRIER_META, TunnelInstructions, fetchCycle, fetchPosition, isGatekeeperEnabled, type CycleAccount } from "@tunnel/sdk";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { BARRIER_META, deploymentMessage } from "@tunnel/sdk";
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { splitCycles, useChainClock, useCycles, useOwnerPositions, usePosition, usePositionRent } from "@/lib/chain";
-import { appConfig } from "@/lib/config";
+import { splitCycles, useChainClock, useCycles, useOwnerPositions, usePosition, type CycleAccount } from "@/lib/chain";
 import { displayStatus, formatCountdown } from "@/lib/cycle";
 import { physicsOf, useProtocolConfig } from "@/lib/protocol";
 import { useQuality, particleBudget } from "@/lib/quality";
 import { markRevealed, planReveal, wasRevealed, type RevealPlan } from "@/lib/reveal";
 import { play } from "@/lib/sound";
 import { useActivity } from "@/lib/stream";
-import { useSendTx } from "@/lib/tx";
+import { newNonce, useSignedRequest } from "@/lib/tx";
+import { refreshMatching } from "@/lib/poll";
+import { getJson } from "@/lib/api";
+import { parseCycle, parsePosition } from "@/lib/types";
 import type { ChamberApi, ChamberPhase } from "../three/Chamber";
 import { StaticAccelerator } from "../three/StaticAccelerator";
 import { Arrow, Badge, Button, Dot, PanelHeader, cx } from "../ui";
 import { WalletPicker } from "../WalletButton";
-import { useWalletAuth } from "../WalletAuth";
 import { ClaimsPanel } from "./ClaimsPanel";
 import { ConfigPanel, type Config } from "./ConfigPanel";
 import { DeployDialog } from "./DeployDialog";
@@ -26,7 +27,6 @@ import { ResultCard } from "./ResultCard";
 import { TelemetryPanel } from "./TelemetryPanel";
 
 const Chamber = dynamic(() => import("../three/Chamber"), { ssr: false });
-const ix = new TunnelInstructions(appConfig.programId);
 
 const PHASE_LABEL: Record<ChamberPhase, string> = {
   idle: "",
@@ -39,20 +39,17 @@ const PHASE_LABEL: Record<ChamberPhase, string> = {
 
 export function AcceleratorApp() {
   const q = useQuality();
-  const { connection } = useConnection();
   const { publicKey } = useWallet();
-  const auth = useWalletAuth();
   const { now } = useChainClock(250);
-  const cycles = useCycles(4);
+  const cycles = useCycles();
   const protocol = cycles.protocol.data;
-  const { current, upcoming, recent } = splitCycles(cycles.data, now);
+  const { current, recent } = splitCycles(cycles.data, now);
   const latest = recent[0] ?? null;
   const cfg = useProtocolConfig();
   const position = usePosition(current?.id);
   const ownerPositions = useOwnerPositions();
-  const rent = usePositionRent();
   const activity = useActivity(40);
-  const { send, state: tx, reset } = useSendTx();
+  const { submit, state: tx, reset } = useSignedRequest<{ deployment: { cycleId: string; count: number } }>();
 
   const [config, setConfig] = useState<Config>({ barrier: 1, level: 2, count: 5 });
   const [dialog, setDialog] = useState(false);
@@ -61,7 +58,7 @@ export function AcceleratorApp() {
   const [revealing, setRevealing] = useState(false);
   const [progress, setProgress] = useState<{ done: number; tunneled: number; total: number } | null>(null);
   const [result, setResult] = useState<{ plan: RevealPlan; cycle: CycleAccount } | null>(null);
-  const [lastDeploy, setLastDeploy] = useState<{ cycleId: bigint; signature: string } | null>(null);
+  const [lastDeploy, setLastDeploy] = useState<{ cycleId: bigint } | null>(null);
   const chamber = useRef<ChamberApi>(null);
 
   // Snapshot odds come from the cycle the user would deploy into (else the protocol's current params).
@@ -70,13 +67,12 @@ export function AcceleratorApp() {
   const levels = current?.levels ?? cfg.levels;
   const energyPerCycle = current?.energyPerCycle ?? cfg.energyPerCycle;
   const energyLeft = publicKey && current ? energyPerCycle - (position.data?.energyUsed ?? 0) : null;
-  const cosign = !!protocol && isGatekeeperEnabled(protocol);
-  const canDeploy = !!current && !!protocol && !protocol.paused && appConfig.depositsEnabled && (energyLeft == null || energyLeft >= levels[config.level].cost);
+  const canDeploy = !!current && !!protocol && !protocol.paused && (energyLeft == null || energyLeft >= levels[config.level].cost);
   const barrierColor = BARRIER_META[config.barrier].color;
 
   // ---------------------------------------------------------------- watched cycle (the latest one this wallet joined)
   const watched = useMemo(() => {
-    const open = (ownerPositions.data ?? []).filter((p) => !p.claimed);
+    const open = (ownerPositions.data ?? []).filter((p) => !p.settled || !wasRevealed(p.cycleId));
     const ids = open.map((p) => p.cycleId);
     if (lastDeploy) ids.push(lastDeploy.cycleId);
     return ids.length ? ids.reduce((a, b) => (a > b ? a : b)) : null;
@@ -96,12 +92,16 @@ export function AcceleratorApp() {
     chamber.current?.setQueued(colors.length, colors);
   }, [watchedPosition, revealing]);
 
-  // ---------------------------------------------------------------- reveal (only after onchain settlement)
+  // ---------------------------------------------------------------- reveal (only after settlement)
   const runReveal = useCallback(
     async (cycleId: bigint) => {
       if (!publicKey || revealing) return;
-      const [c, p] = await Promise.all([fetchCycle(connection, cycleId, appConfig.programId), fetchPosition(connection, cycleId, publicKey, appConfig.programId)]);
-      if (!c || !p) return;
+      const r = await getJson<{ cycle: Record<string, unknown>; positions: Record<string, unknown>[] }>(`/api/cycles/${cycleId}`);
+      if (!r.available || !r.data) return;
+      const c = parseCycle(r.data.cycle);
+      const raw = r.data.positions.find((x) => x.wallet === publicKey.toBase58());
+      if (!raw) return;
+      const p = parsePosition(raw);
       const plan = planReveal(c, p);
       if (!plan || !chamber.current) return;
       setRevealing(true);
@@ -130,12 +130,12 @@ export function AcceleratorApp() {
       setRevealing(false);
       play(plan.successes > 0 ? "tunnel" : "reflect");
     },
-    [connection, publicKey, revealing],
+    [publicKey, revealing],
   );
 
   useEffect(() => {
     if (!watchedCycle || !watchedPosition || revealing || result?.cycle.id === watchedCycle.id) return;
-    const ready = watchedPosition.settled && (watchedCycle.status === "settled" || watchedCycle.status === "resolving");
+    const ready = watchedPosition.settled && watchedCycle.status === "settled";
     if (ready && !wasRevealed(watchedCycle.id)) void runReveal(watchedCycle.id);
   }, [watchedCycle, watchedPosition, revealing, result, runReveal]);
 
@@ -150,10 +150,6 @@ export function AcceleratorApp() {
   // ---------------------------------------------------------------- deploy
   const startDeploy = async () => {
     if (!publicKey) return setPicker(true);
-    if (cosign && auth.status !== "verified") {
-      await auth.signIn();
-      return;
-    }
     reset();
     setDialog(true);
   };
@@ -163,11 +159,19 @@ export function AcceleratorApp() {
     const left = energyLeft ?? energyPerCycle;
     const count = Math.min(config.count, Math.floor(left / levels[config.level].cost));
     if (count < 1) return;
-    const sig = await send([ix.deployParticles({ owner: publicKey, cycleId: current.id, barrier: config.barrier, level: config.level, count, gatekeeper: cosign ? protocol!.gatekeeper : null })], {
-      cosign,
+    const message = deploymentMessage({
+      wallet: publicKey.toBase58(),
+      cycleId: current.id,
+      barrier: config.barrier,
+      level: config.level,
+      count,
+      nonce: newNonce(),
+      issuedAt: new Date().toISOString(),
     });
-    if (!sig) return;
-    setLastDeploy({ cycleId: current.id, signature: sig });
+    const ok = await submit("/api/deploy", message);
+    if (!ok) return;
+    refreshMatching("verify:");
+    setLastDeploy({ cycleId: current.id });
     setDialog(false);
     setResult(null);
     chamber.current?.inject(barrierColor, count);
@@ -182,13 +186,9 @@ export function AcceleratorApp() {
       : watchedPosition && !watchedPosition.settled
         ? watchStatus === "OPEN"
           ? "PARTICLES IN STORAGE RING · AWAITING CYCLE CLOSE"
-          : watchStatus === "AWAITING RANDOMNESS"
-            ? "REQUESTING VERIFIABLE RANDOMNESS · ORAO VRF"
-            : watchStatus === "RESOLVING"
-              ? "RANDOMNESS REVEALED · SETTLING POSITIONS"
-              : watchStatus === "VOID"
-                ? "CYCLE VOIDED · NO OUTCOMES"
-                : "CYCLE CLOSED · FIXING VRF SEED"
+          : watchStatus === "VOID"
+            ? "CYCLE VOIDED · NO OUTCOMES"
+            : "CYCLE CLOSED · WAITING FOR THE SOLANA ENTROPY BLOCK"
         : result
           ? result.plan.successes > 0
             ? "TUNNELING SUCCESSFUL"
@@ -221,7 +221,7 @@ export function AcceleratorApp() {
             <div className="text-right">
               <div className="font-mono text-[10px] tracking-[0.22em] text-faint">CYCLE</div>
               <div className="mt-1 font-mono text-lg tabular">{current ? `#${current.id}` : "—"}</div>
-              <div className="font-mono text-[13px] tabular text-cyan">{current ? formatCountdown(current.closeTs - now) : upcoming ? `T−${formatCountdown(upcoming.openTs - now)}` : ""}</div>
+              <div className="font-mono text-[13px] tabular text-cyan">{current ? formatCountdown(current.closeTs - now) : ""}</div>
             </div>
           </div>
           {progress && (
@@ -238,7 +238,7 @@ export function AcceleratorApp() {
             </div>
           )}
           {ambient && !progress && (
-            <div className="pointer-events-none absolute bottom-4 left-4 font-mono text-[10px] tracking-[0.14em] text-faint sm:left-5">AMBIENT PARTICLES ARE A VISUAL EFFECT · OUTCOMES APPEAR ONLY AFTER ONCHAIN SETTLEMENT</div>
+            <div className="pointer-events-none absolute bottom-4 left-4 font-mono text-[10px] tracking-[0.14em] text-faint sm:left-5">AMBIENT PARTICLES ARE A VISUAL EFFECT · OUTCOMES APPEAR ONLY AFTER SETTLEMENT</div>
           )}
         </section>
 
@@ -250,8 +250,6 @@ export function AcceleratorApp() {
             <Button variant="energy" size="lg" className="w-full font-mono uppercase" disabled={(!canDeploy && !!publicKey) || revealing || tx.phase === "signing"} onClick={startDeploy}>
               {!publicKey ? (
                 "Connect wallet to deploy"
-              ) : cosign && auth.status !== "verified" ? (
-                auth.status === "signing" ? "Sign the message in your wallet…" : "Verify wallet to deploy"
               ) : (
                 <>
                   Deploy particles <Arrow />
@@ -260,22 +258,22 @@ export function AcceleratorApp() {
             </Button>
             <p className="mt-3 text-center text-[11px] leading-relaxed text-faint">
               {!current
-                ? "No cycle is accepting particles right now; the next one opens shortly."
+                ? protocol?.paused
+                  ? "Mining is paused right now. Check back soon."
+                  : "No cycle is accepting particles right now; the next one opens shortly."
                 : energyLeft === 0
                   ? "You have used all your energy this cycle. It refills next cycle."
-                  : "Free to mine · network fee + refundable deposit only · outcome after the cycle settles"}
+                  : "Free to mine · sign a message, no fees · outcome after the cycle settles"}
             </p>
-            {auth.error && <p className="mt-2 text-center text-[11px] text-red">{auth.error}</p>}
           </div>
         </section>
 
         {/* telemetry */}
         <section className="panel order-3 overflow-hidden lg:col-start-2 xl:col-start-3 xl:row-start-1" aria-label="Telemetry">
-          <PanelHeader index="02" title="Telemetry" right={<span className="flex items-center gap-1.5 font-mono text-[10px] text-faint"><Dot color={activity.live ? "#00D9FF" : "#4c5a69"} pulse={activity.live} /> onchain</span>} />
+          <PanelHeader index="02" title="Telemetry" right={<span className="flex items-center gap-1.5 font-mono text-[10px] text-faint"><Dot color={activity.live ? "#00D9FF" : "#4c5a69"} pulse={activity.live} /> live</span>} />
           <TelemetryPanel
             protocol={protocol}
             current={current}
-            upcoming={upcoming}
             latest={latest}
             now={now}
             loading={cycles.protocol.loading && protocol === undefined}
@@ -293,7 +291,6 @@ export function AcceleratorApp() {
               <ResultCard
                 plan={result.plan}
                 cycle={result.cycle}
-                deploySignature={lastDeploy?.cycleId === result.cycle.id ? lastDeploy.signature : null}
                 onRunAgain={() => {
                   setResult(null);
                   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -317,9 +314,6 @@ export function AcceleratorApp() {
         odds={odds}
         cycleId={current?.id ?? null}
         closesIn={current ? formatCountdown(current.closeTs - now) : "—"}
-        newPosition={!position.data}
-        rentLamports={rent.data ?? null}
-        cosign={cosign}
         tx={tx}
         energyCost={Math.min(config.count, Math.max(1, Math.floor((energyLeft ?? energyPerCycle) / levels[config.level].cost))) * levels[config.level].cost}
       />

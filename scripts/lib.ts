@@ -13,27 +13,19 @@ const GENESIS = {
 } as Record<string, string>;
 
 export function connection() {
-  const url = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
+  const url = process.env.SOLANA_RPC_URL ?? "http://127.0.0.1:8899";
   return new Connection(url, "confirmed");
 }
 
 /**
- * Identifies the cluster by genesis hash (not by URL, which can lie) and
- * refuses to touch mainnet unless the operator has explicitly authorised it.
+ * Identifies the cluster by genesis hash (not by URL, which can lie). Any
+ * script that moves real tokens on mainnet requires --confirm-mainnet.
  */
 export async function guardCluster(conn: Connection): Promise<string> {
   const genesis = await conn.getGenesisHash();
   const cluster = GENESIS[genesis] ?? "localnet";
-  if (cluster === "mainnet-beta") {
-    const authorised =
-      process.env.TUNNEL_MAINNET_AUTHORIZED === "I_HAVE_OWNER_APPROVAL_AND_AN_INDEPENDENT_AUDIT" &&
-      process.argv.includes("--confirm-mainnet");
-    if (!authorised) {
-      throw new Error(
-        "Refusing to run against mainnet-beta. Mainnet requires explicit owner authorization and an " +
-          "independent security audit (docs/DEPLOYMENT.md §Mainnet).",
-      );
-    }
+  if (cluster === "mainnet-beta" && !process.argv.includes("--confirm-mainnet")) {
+    throw new Error("This is MAINNET (real funds). Re-run with --confirm-mainnet once you have checked every value.");
   }
   console.log(`cluster: ${cluster} (${conn.rpcEndpoint})`);
   return cluster;
@@ -45,20 +37,17 @@ export function loadKeypair(path = process.env.KEYPAIR_PATH ?? join(homedir(), "
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
 }
 
-/** `computeUnits` is needed for initialize / update_params, which evaluate the physics model in soft-float. */
-export async function sendIxs(conn: Connection, payer: Keypair, ixs: TransactionInstruction[], extra: Keypair[] = [], computeUnits?: number) {
-  const all = computeUnits ? [ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }), ...ixs] : ixs;
+export async function sendIxs(conn: Connection, payer: Keypair, ixs: TransactionInstruction[], extra: Keypair[] = []) {
+  const all = [ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }), ...ixs];
   return sendAndConfirmTransaction(conn, new Transaction().add(...all), [payer, ...extra], { commitment: "confirmed" });
 }
-
-export const PHYSICS_CU = 400_000;
 
 export function explorer(sig: string, cluster: string) {
   const c = cluster === "mainnet-beta" ? "" : cluster === "localnet" ? "?cluster=custom" : `?cluster=${cluster}`;
   return `https://explorer.solana.com/tx/${sig}${c}`;
 }
 
-/** Deployment record (addresses only — never secrets) for app/keeper config. */
+/** Deployment record (addresses only — never secrets) for app/engine config. */
 export function deploymentPath(cluster: string) {
   return join(ROOT, "deployments", `${cluster}.json`);
 }

@@ -5,11 +5,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Server-Sent Events: pushes newly indexed protocol events to the browser.
+ * Server-Sent Events: pushes new protocol events to the browser.
  * Each message carries the DB id so clients can resume with Last-Event-ID.
  */
 export async function GET(req: Request) {
-  if (!hasDatabase()) return new Response("indexer not configured", { status: 503 });
+  if (!hasDatabase()) return new Response("database not configured", { status: 503 });
   const db = getDb();
   const enc = new TextEncoder();
   const resumeFrom = req.headers.get("last-event-id");
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
       };
       send("retry: 3000\n\n");
       if (cursor === undefined) {
-        const latest = await db.indexedEvent.findFirst({ orderBy: { id: "desc" }, select: { id: true } }).catch(() => null);
+        const latest = await db.protocolEvent.findFirst({ orderBy: { id: "desc" }, select: { id: true } }).catch(() => null);
         cursor = latest?.id ?? 0n;
       }
       while (!closed) {
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
           }
           send(": keep-alive\n\n");
         } catch {
-          send("event: error\ndata: indexer unavailable\n\n");
+          send("event: error\ndata: database unavailable\n\n");
         }
         await new Promise((r) => setTimeout(r, 1500));
       }

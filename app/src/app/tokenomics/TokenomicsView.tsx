@@ -1,42 +1,44 @@
 "use client";
 
 import { useConnection } from "@solana/wallet-adapter-react";
+import { PublicKey } from "@solana/web3.js";
 import { DEFAULT_PARAMS, PLACEHOLDER_TOKENOMICS, emissionCurve, formatTunnel, scheduledEmission, type ProtocolParams } from "@tunnel/sdk";
 import { Badge, Panel, PanelHeader, Val } from "@/components/ui";
 import { useProtocol } from "@/lib/chain";
 import { explorerAddress } from "@/lib/config";
 import { usePoll } from "@/lib/poll";
 
-/** Live token figures read from chain; allocations that are not configured yet are labelled placeholders. */
+/** Live token figures (chain + server); allocations that are not configured yet are labelled placeholders. */
 export function TokenomicsView() {
   const { connection } = useConnection();
   const protocol = useProtocol();
   const p = protocol.data;
   const loading = protocol.loading && p === undefined;
-  const supply = usePoll(p ? `supply:${p.tunnelMint}` : null, async () => BigInt((await connection.getTokenSupply(p!.tunnelMint)).value.amount), 30_000);
-  const vault = usePoll(p ? `vault:${p.rewardVault}` : null, async () => BigInt((await connection.getTokenAccountBalance(p!.rewardVault)).value.amount), 10_000);
-  const mintInfo = usePoll(p ? `mintinfo:${p.tunnelMint}` : null, async () => {
-    const info = await connection.getParsedAccountInfo(p!.tunnelMint);
+  const mint = p?.tunnelMint ?? null;
+  const supply = usePoll(mint ? `supply:${mint}` : null, async () => BigInt((await connection.getTokenSupply(new PublicKey(mint!))).value.amount), 30_000);
+  const mintInfo = usePoll(mint ? `mintinfo:${mint}` : null, async () => {
+    const info = await connection.getParsedAccountInfo(new PublicKey(mint!));
     const parsed = (info.value?.data as { parsed?: { info?: { mintAuthority: string | null } } })?.parsed;
     return parsed?.info?.mintAuthority ?? null;
   }, 60_000);
 
   const params: ProtocolParams = p?.params ?? DEFAULT_PARAMS;
   const curve = emissionCurve(params, 2_000, 20);
-  const outstanding = p ? p.totalTokensAllocated - p.totalTokensClaimed : null;
+  const outstanding = p ? p.totals.tokensAllocated - p.totals.tokensClaimed : null;
+  const nextId = BigInt(p?.totals.cycles ?? 0) + 1n;
 
   return (
     <div className="mx-auto grid max-w-[1400px] gap-5 px-4 py-10 sm:px-6">
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line md:grid-cols-4">
         {[
-          ["Total supply (onchain)", supply.data != null ? formatTunnel(supply.data, 0) : null],
+          ["Total supply (on Solana)", supply.data != null ? formatTunnel(supply.data, 0) : null],
           ["Emissions reserve funded", p ? formatTunnel(p.reserveFundedTotal, 0) : null],
-          ["Reward vault balance", vault.data != null ? formatTunnel(vault.data, 0) : null],
+          ["Reward wallet balance", p?.rewardWalletTokens != null ? formatTunnel(p.rewardWalletTokens, 0) : p ? "—" : null],
           ["Reserve not yet committed", p ? formatTunnel(p.reserveAvailable, 0) : null],
-          ["Rewards allocated", p ? formatTunnel(p.totalTokensAllocated) : null],
-          ["Rewards claimed", p ? formatTunnel(p.totalTokensClaimed) : null],
+          ["Rewards allocated", p ? formatTunnel(p.totals.tokensAllocated) : null],
+          ["Rewards claimed", p ? formatTunnel(p.totals.tokensClaimed) : null],
           ["Claimable, not yet claimed", outstanding != null ? formatTunnel(outstanding) : null],
-          ["Next cycle budget", p ? formatTunnel(scheduledEmission(params, p.nextCycleId) < p.reserveAvailable ? scheduledEmission(params, p.nextCycleId) : p.reserveAvailable, 0) : null],
+          ["Next cycle budget", p ? formatTunnel(scheduledEmission(params, nextId) < p.reserveAvailable ? scheduledEmission(params, nextId) : p.reserveAvailable, 0) : null],
         ].map(([k, v]) => (
           <div key={k} className="bg-panel px-5 py-5">
             <dt className="label">{k}</dt>
@@ -49,7 +51,7 @@ export function TokenomicsView() {
 
       <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
         <Panel className="overflow-hidden">
-          <PanelHeader title="Emission schedule (before the reserve cap)" right={<Badge tone={p ? "cyan" : "amber"}>{p ? "onchain params" : "launch params"}</Badge>} />
+          <PanelHeader title="Emission schedule (before the reserve cap)" right={<Badge tone={p ? "cyan" : "amber"}>{p ? "live params" : "launch params"}</Badge>} />
           <EmissionChart points={curve.map((c) => ({ x: c.epoch, y: Number(c.cumulative / 10n ** 6n), per: Number(c.perCycle / 10n ** 6n) }))} cap={Number((p?.reserveFundedTotal ?? PLACEHOLDER_TOKENOMICS.miningReserve) / 10n ** 6n)} />
           <div className="border-t border-line-soft px-5 py-3 text-xs leading-relaxed text-muted">
             {formatTunnel(params.initialEmissionPerCycle, 0)} $TUNNEL per cycle, × {(params.emissionDecayBps / 100).toFixed(2)}% every {params.emissionEpochCycles} cycles. Each cycle can
@@ -62,7 +64,7 @@ export function TokenomicsView() {
           <div className="p-5">
             <AllocationBar />
             <p className="mt-4 text-xs leading-relaxed text-muted">
-              Only the emissions reserve has a defined, onchain destination: the program&apos;s reward vault. Final tokenomics (team, liquidity,
+              Only the emissions reserve has a defined destination: the TUNNEL reward wallet, which pays claims. Final tokenomics (team, liquidity,
               treasury, community) have <b className="text-fg-2">not been supplied</b>; the remaining supply sits unallocated in the operator wallet. These
               figures are placeholders, not commitments.
             </p>
@@ -71,14 +73,12 @@ export function TokenomicsView() {
       </div>
 
       <Panel className="overflow-hidden">
-        <PanelHeader title="Onchain addresses" />
+        <PanelHeader title="Addresses" />
         <dl className="divide-y divide-line-soft font-mono text-xs">
           {[
-            ["$TUNNEL mint", p?.tunnelMint.toBase58()],
+            ["$TUNNEL mint", p?.tunnelMint ?? undefined],
             ["Mint authority", mintInfo.data === null ? "revoked (supply fixed)" : mintInfo.data],
-            ["Reward vault (program-owned)", p?.rewardVault.toBase58()],
-            ["Protocol account", p?.address.toBase58()],
-            ["Admin", p?.admin.toBase58()],
+            ["Reward wallet (pays claims)", p?.rewardWallet ?? undefined],
             ["Treasury wallets", "none — the protocol takes no fees"],
           ].map(([k, v]) => (
             <div key={k} className="flex flex-wrap justify-between gap-2 px-5 py-3">

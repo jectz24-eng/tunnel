@@ -1,15 +1,16 @@
 "use client";
 
-import { BARRIER_META, LEVEL_LABELS, formatPpb, formatTunnel, oraoRandomnessPda, toHex, type CycleAccount } from "@tunnel/sdk";
+import { BARRIER_META, LEVEL_LABELS, formatPpb, formatTunnel } from "@tunnel/sdk";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useState } from "react";
-import { explorerAddress, explorerTx } from "@/lib/config";
+import { explorerBlock } from "@/lib/config";
+import type { CycleAccount } from "@/lib/types";
 import type { RevealPlan } from "@/lib/reveal";
 import { Arrow, Badge, Button, ButtonLink } from "../ui";
 
 /** PHASE 4 — the settled result of a cycle's experiments for this wallet. */
-export function ResultCard({ plan, cycle, deploySignature, onRunAgain, onReplay }: { plan: RevealPlan; cycle: CycleAccount; deploySignature?: string | null; onRunAgain: () => void; onReplay: () => void }) {
+export function ResultCard({ plan, cycle, onRunAgain, onReplay }: { plan: RevealPlan; cycle: CycleAccount; onRunAgain: () => void; onReplay: () => void }) {
   const [copied, setCopied] = useState(false);
   const tunneled = plan.successes > 0;
   const cells = new Map<string, { b: number; l: number; n: number; s: number; ppb: number }>();
@@ -87,23 +88,23 @@ export function ResultCard({ plan, cycle, deploySignature, onRunAgain, onReplay 
       </table>
       <div className="space-y-1.5 border-t border-line-soft bg-bg-2/50 px-6 py-4 font-mono text-[11px] text-muted">
         <div className="flex justify-between gap-3">
-          <span>Randomness (ORAO VRF)</span>
-          <a className="truncate text-fg-2 hover:text-cyan" href={explorerAddress(oraoRandomnessPda(cycle.vrfSeed).toBase58())} target="_blank" rel="noreferrer">
-            {toHex(cycle.randomness).slice(0, 24)}…
-          </a>
+          <span>Server seed (committed before deployments)</span>
+          <span className="truncate text-fg-2">{cycle.serverSeed?.slice(0, 24)}…</span>
         </div>
         <div className="flex justify-between gap-3">
-          <span>VRF seed</span>
-          <span className="truncate text-fg-2">{toHex(cycle.vrfSeed).slice(0, 24)}…</span>
-        </div>
-        {deploySignature && (
-          <div className="flex justify-between gap-3">
-            <span>Deployment tx</span>
-            <a className="truncate text-fg-2 hover:text-cyan" href={explorerTx(deploySignature)} target="_blank" rel="noreferrer">
-              {deploySignature.slice(0, 24)}…
+          <span>Solana entropy block</span>
+          {cycle.entropySlotUsed != null ? (
+            <a className="truncate text-fg-2 hover:text-cyan" href={explorerBlock(cycle.entropySlotUsed)} target="_blank" rel="noreferrer">
+              slot {cycle.entropySlotUsed.toString()} · {cycle.entropyBlockhash?.slice(0, 12)}…
             </a>
-          </div>
-        )}
+          ) : (
+            <span>—</span>
+          )}
+        </div>
+        <div className="flex justify-between gap-3">
+          <span>Randomness</span>
+          <span className="truncate text-fg-2">{cycle.randomnessHex?.slice(0, 24)}…</span>
+        </div>
       </div>
       <div className="flex flex-wrap gap-2 border-t border-line-soft px-6 py-4">
         <Button variant="energy" className="font-mono uppercase tracking-[0.1em]" onClick={onRunAgain}>
@@ -120,7 +121,7 @@ export function ResultCard({ plan, cycle, deploySignature, onRunAgain, onReplay 
         </Button>
       </div>
       <div className="px-6 pb-4 text-[11px] text-faint">
-        Claim this reward in <Link href="#claims" className="text-cyan hover:underline">Claims</Link>. Positions stay claimable indefinitely.
+        Claim this reward in <Link href="#claims" className="text-cyan hover:underline">Claims</Link>. Rewards stay claimable indefinitely.
       </div>
     </motion.div>
   );

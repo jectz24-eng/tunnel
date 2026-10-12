@@ -1,35 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import { useProtocol } from "@/lib/chain";
-import { appConfig, clusterLabel } from "@/lib/config";
 
 /**
- * States plainly when the program isn't deployed/initialized on the configured
- * cluster, so empty values are never mistaken for real zeroes.
+ * States plainly when TUNNEL is unreachable, paused or its engine is down,
+ * so empty values are never mistaken for real zeroes.
  */
 export function DeploymentBanner() {
   const protocol = useProtocol();
-  if (protocol.loading && protocol.data === undefined) return null;
-
-  if (protocol.error) {
-    return <Bar tone="red">Cannot reach the {clusterLabel[appConfig.cluster]} RPC endpoint. Onchain values are unavailable until it recovers.</Bar>;
-  }
+  if (protocol.data === undefined) return null;
   if (protocol.data === null) {
-    return (
-      <Bar tone="amber">
-        The TUNNEL program is not initialized on {clusterLabel[appConfig.cluster]} yet. Mining is disabled and statistics are unavailable, not zero.{" "}
-        <Link href="/how-it-works#deployment" className="underline underline-offset-4">
-          Deployment status
-        </Link>
-      </Bar>
-    );
+    return <Bar tone="red">TUNNEL is temporarily unreachable. Live values are unavailable until it recovers; your positions and rewards are safe.</Bar>;
   }
-  if (protocol.data?.paused) {
-    return <Bar tone="amber">New deployments are paused by the protocol admin. Settlement and claims remain available.</Bar>;
+  if (protocol.data.paused) {
+    return <Bar tone="amber">Mining is paused right now. Settled rewards can still be claimed.</Bar>;
   }
-  if (!appConfig.depositsEnabled) {
-    return <Bar tone="amber">Mainnet mining is disabled in this build pending owner authorization and an independent audit.</Bar>;
+  if (!protocol.data.engineOnline) {
+    return <Bar tone="amber">The cycle engine is catching up. Cycles will resume shortly; nothing is lost.</Bar>;
   }
   return null;
 }

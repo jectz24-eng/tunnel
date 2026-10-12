@@ -1,24 +1,21 @@
 import "server-only";
 import type { NextRequest } from "next/server";
-import { serverProtocol } from "./chain";
 import { SESSION_COOKIE, readSession } from "./session";
 
+/** Wallets allowed to operate TUNNEL, from ADMIN_WALLETS (comma-separated public addresses). */
+export function adminWallets(): Set<string> {
+  return new Set((process.env.ADMIN_WALLETS ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+}
+
 /**
- * Admin authorization for the operations console. The signed-in wallet
- * (Sign-In With Solana session) must be the protocol admin recorded onchain.
- * This gates *viewing* operational data only: every admin action is an
- * onchain instruction that the program itself authorizes against the same key.
+ * Admin authorization: the Sign-In With Solana session (an HttpOnly cookie
+ * issued only after verifying a wallet signature) must belong to a wallet
+ * listed in ADMIN_WALLETS.
  */
-export async function requireAdmin(req: NextRequest): Promise<{ ok: true; wallet: string } | { ok: false; status: number; error: string }> {
+export function requireAdmin(req: NextRequest): { ok: true; wallet: string } | { ok: false; status: number; error: string } {
   const wallet = readSession(req.cookies.get(SESSION_COOKIE)?.value);
-  if (!wallet) return { ok: false, status: 401, error: "sign in with the admin wallet" };
-  let admin: string | null = null;
-  try {
-    admin = (await serverProtocol())?.admin.toBase58() ?? null;
-  } catch {
-    return { ok: false, status: 503, error: "cannot read the protocol admin from chain" };
-  }
-  if (!admin) return { ok: false, status: 404, error: "protocol not initialized" };
-  if (admin !== wallet) return { ok: false, status: 403, error: "this wallet is not the protocol admin" };
+  if (!wallet) return { ok: false, status: 401, error: "sign in with an admin wallet" };
+  if (adminWallets().size === 0) return { ok: false, status: 503, error: "ADMIN_WALLETS is not configured" };
+  if (!adminWallets().has(wallet)) return { ok: false, status: 403, error: "this wallet is not an admin" };
   return { ok: true, wallet };
 }

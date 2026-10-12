@@ -4,7 +4,7 @@ import type { ActivityEvent } from "@/lib/stream";
 import { explorerTx } from "@/lib/config";
 import { Dot } from "./ui";
 
-/** One human-readable line for an indexed protocol event. */
+/** One human-readable line for a protocol event. */
 export function ActivityLine({ e, compact }: { e: ActivityEvent; compact?: boolean }) {
   const d = e.data;
   const who = e.owner ? (
@@ -12,6 +12,11 @@ export function ActivityLine({ e, compact }: { e: ActivityEvent; compact?: boole
       {shortKey(e.owner)}
     </Link>
   ) : null;
+  const cycle = (
+    <Link href={`/history/cycle/${e.cycleId}`} className="text-fg-2 hover:text-cyan">
+      {e.cycleId}
+    </Link>
+  );
   let dot = "#81909F";
   let text: React.ReactNode = e.name;
   switch (e.name) {
@@ -29,51 +34,57 @@ export function ActivityLine({ e, compact }: { e: ActivityEvent; compact?: boole
       dot = "#EAFBFF";
       text = (
         <>
-          {who} claimed <b className="font-medium text-flare">{formatTunnel(BigInt(d.tokens))}</b> $TUNNEL
+          {who} received <b className="font-medium text-flare">{formatTunnel(BigInt(d.amount))}</b> $TUNNEL
         </>
       );
       break;
-    case "CycleFinalized": {
+    case "ClaimRequested":
+      dot = "#81909F";
+      text = <>{who} requested a payout</>;
+      break;
+    case "CycleSettled": {
       const s = (d.successes as string[]).reduce((a, b) => a + Number(b), 0);
       dot = "#00D9FF";
       text = (
         <>
-          Cycle <Link href={`/history/cycle/${e.cycleId}`} className="text-fg-2 hover:text-cyan">{e.cycleId}</Link> settled ·{" "}
-          {Number(d.outcome) === 4 ? "no participants" : Number(d.outcome) === 3 ? "void" : <><b className="font-medium text-cyan">{s}</b> tunneled</>}
+          Cycle {cycle} settled ·{" "}
+          {d.outcome === "empty" ? (
+            "no participants"
+          ) : (
+            <>
+              <b className="font-medium text-cyan">{s}</b> tunneled
+            </>
+          )}
         </>
       );
       break;
     }
     case "CycleOpened":
       dot = "#2864FF";
-      text = <>Cycle {e.cycleId} opened · budget {formatTunnel(BigInt(d.emission_budget), 0)} $TUNNEL</>;
+      text = <>Cycle {e.cycleId} opened · budget {formatTunnel(BigInt(d.emissionBudget), 0)} $TUNNEL</>;
       break;
     case "CycleClosed":
       dot = "#F0A64B";
-      text = <>Cycle {e.cycleId} closed · {d.participants} wallets · seed fixed</>;
-      break;
-    case "RandomnessRevealed":
-      dot = "#885BFF";
-      text = <>Cycle {e.cycleId} randomness revealed (ORAO VRF)</>;
-      break;
-    case "PositionSettled":
-      dot = "#2864FF";
-      text = <>{who} settled in cycle {e.cycleId}</>;
+      text = <>Cycle {cycle} closed · waiting for the entropy block</>;
       break;
     case "CycleVoided":
       dot = "#FF6B7D";
-      text = <>Cycle {e.cycleId} voided · randomness timeout</>;
+      text = <>Cycle {cycle} voided · not settled</>;
       break;
   }
+  const time = new Date(e.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   return (
     <div className="flex items-center gap-3 text-[13px] text-muted">
       <Dot color={dot} />
       <span className="min-w-0 flex-1 truncate">{text}</span>
-      {!compact && (
-        <a href={explorerTx(e.signature)} target="_blank" rel="noreferrer" className="shrink-0 font-mono text-[10.5px] text-faint hover:text-cyan">
-          {e.blockTime ? new Date(e.blockTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "tx"}
-        </a>
-      )}
+      {!compact &&
+        (e.name === "RewardClaimed" && d.txSignature ? (
+          <a href={explorerTx(String(d.txSignature))} target="_blank" rel="noreferrer" className="shrink-0 font-mono text-[10.5px] text-faint hover:text-cyan">
+            {time}
+          </a>
+        ) : (
+          <span className="shrink-0 font-mono text-[10.5px] text-faint">{time}</span>
+        ))}
     </div>
   );
 }

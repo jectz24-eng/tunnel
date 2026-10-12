@@ -104,7 +104,7 @@ export function Nav() {
 function CycleChip() {
   const detected = useDetectedCluster();
   const { now } = useChainClock(1000);
-  const cycles = useCycles(3);
+  const cycles = useCycles();
   const { current } = splitCycles(cycles.data, now);
   const mismatch = detected.data && detected.data !== appConfig.cluster && !(appConfig.cluster === "localnet" && detected.data === "localnet");
   return (

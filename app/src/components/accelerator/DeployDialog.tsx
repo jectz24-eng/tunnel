@@ -1,17 +1,16 @@
 "use client";
 
-import { BARRIER_META, LEVEL_LABELS, formatPpb, formatSol, formatTunnel, type OddsTable } from "@tunnel/sdk";
+import { BARRIER_META, LEVEL_LABELS, formatPpb, formatTunnel, type OddsTable } from "@tunnel/sdk";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
 import type { TxState } from "@/lib/tx";
-import { explorerTx } from "@/lib/config";
 import { Arrow, Button } from "../ui";
 import type { Config } from "./ConfigPanel";
 
 /**
- * Deployment preview: states exactly what the user signs and what it costs.
- * Mining is free of protocol charges; the wallet pays only Solana's network
- * fee and, on its first deployment of a cycle, a refundable account deposit.
+ * Deployment preview: states exactly what the user signs. Mining is free:
+ * the wallet signs a readable message (not a transaction), so no SOL or
+ * tokens move and there are no network fees.
  */
 export function DeployDialog({
   open,
@@ -21,9 +20,6 @@ export function DeployDialog({
   odds,
   cycleId,
   closesIn,
-  newPosition,
-  rentLamports,
-  cosign,
   tx,
   energyCost,
 }: {
@@ -34,13 +30,10 @@ export function DeployDialog({
   odds: OddsTable;
   cycleId: bigint | null;
   closesIn: string;
-  newPosition: boolean;
-  rentLamports: bigint | null;
-  cosign: boolean;
   tx: TxState;
   energyCost: number;
 }) {
-  const busy = tx.phase === "authorizing" || tx.phase === "signing" || tx.phase === "sending" || tx.phase === "confirming";
+  const busy = tx.phase === "signing" || tx.phase === "sending";
   useEffect(() => {
     if (!open) return;
     const k = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
@@ -89,16 +82,10 @@ export function DeployDialog({
               <div className="label mb-2.5">What you are signing</div>
               <ul className="space-y-1.5 text-[12.5px] leading-relaxed text-fg-2">
                 <li>
-                  <span className="text-cyan">Free to mine:</span> no SOL or tokens go to the protocol. Energy comes from your cycle allowance.
+                  <span className="text-cyan">Completely free:</span> you sign a readable message, not a transaction. No SOL, no tokens, no network fee.
                 </li>
-                <li>One Solana transaction (network fee ≈ 0.000005 SOL).</li>
-                {newPosition && (
-                  <li>
-                    First deployment this cycle: a refundable account deposit of {rentLamports != null ? `${formatSol(rentLamports, 5)} SOL` : "≈ 0.002 SOL"}, returned in full when you
-                    claim.
-                  </li>
-                )}
-                {cosign && <li>The protocol&apos;s rate-limiting service co-signs this deployment (it controls no funds).</li>}
+                <li>Energy comes from your per-cycle allowance and refills every cycle.</li>
+                <li>Your wallet will show the exact text: wallet, cycle, barrier, energy level and particle count.</li>
               </ul>
               <p className="mt-3 text-[11px] leading-relaxed text-faint">
                 *Nominal reward. If a cycle&apos;s rewards exceed its emission budget, every payout is scaled down pro rata. Outcomes are probabilistic; you
@@ -111,22 +98,13 @@ export function DeployDialog({
                 Cancel
               </Button>
               <Button variant="energy" className="ml-auto font-mono uppercase tracking-[0.1em]" onClick={onConfirm} disabled={busy}>
-                {tx.phase === "authorizing"
-                  ? "Requesting co-signature…"
-                  : tx.phase === "signing"
+                {tx.phase === "signing"
                     ? "Approve in wallet…"
-                    : tx.phase === "sending" || tx.phase === "confirming"
-                      ? "Confirming…"
+                    : tx.phase === "sending"
+                      ? "Recording…"
                       : <>Deploy particles <Arrow /></>}
               </Button>
             </div>
-            {tx.signature && (
-              <div className="border-t border-line-soft px-6 py-2 text-right">
-                <a className="font-mono text-[11px] text-cyan hover:underline" href={explorerTx(tx.signature)} target="_blank" rel="noreferrer">
-                  view transaction
-                </a>
-              </div>
-            )}
           </motion.div>
         </motion.div>
       )}

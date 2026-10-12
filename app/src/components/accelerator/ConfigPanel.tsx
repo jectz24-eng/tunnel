@@ -19,7 +19,7 @@ export interface Config {
 
 /**
  * PARTICLE CONFIGURATION. Every number shown is derived from the cycle's
- * onchain snapshot (odds table, energy costs, allowance); nothing is hardcoded.
+ * cycle's snapshot (odds table, energy costs, allowance); nothing is hardcoded.
  */
 export function ConfigPanel({
   config,

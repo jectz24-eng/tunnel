@@ -15,7 +15,7 @@ export function BarrierChoice() {
           Higher barriers are harder to tunnel through and pay more per success. Rewards are calibrated to the probabilities, so the expected reward per
           unit of energy is the same at every energy level of a barrier: you choose the variance.
         </SectionHeading>
-        <Badge tone={cfg.source === "chain" ? "cyan" : "amber"}>{cfg.source === "chain" ? "Live onchain configuration" : "Launch parameters · not yet onchain"}</Badge>
+        <Badge tone={cfg.source === "chain" ? "cyan" : "amber"}>{cfg.source === "chain" ? "Live configuration" : "Launch parameters"}</Badge>
       </div>
       <div className="mt-14 grid gap-5 lg:grid-cols-3">
         {cfg.barriers.map((b, i) => {
