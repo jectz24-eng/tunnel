@@ -5,13 +5,16 @@
  *   npm run admin -- pause | resume
  *   npm run admin -- cycle-secs 600
  *   npm run admin -- emission 20000        # whole $TUNNEL per cycle (before decay)
+ *   npm run admin -- betting on | off       # open or pause the accelerator
+ *   npm run admin -- bet-limits 1 1000      # min and max bet per particle, whole $TUNNEL
+ *   npm run admin -- max-win-bps 500        # a bet may win at most this share of the free bankroll
  */
-import { loadConfig, reserveAvailable, setParams, setPaused } from "../packages/core/src";
+import { casinoLimits, loadConfig, reserveAvailable, setBetLimits, setParams, setPaused } from "../packages/core/src";
 import { getDb } from "../packages/db/src";
 import { TUNNEL_UNIT, formatSol, formatTunnel } from "../packages/sdk/src";
 
 const db = getDb();
-const [cmd, value] = process.argv.slice(2);
+const [cmd, value, value2] = process.argv.slice(2);
 const actor = "cli";
 
 async function main() {
@@ -31,6 +34,17 @@ async function main() {
       await setParams(db, { ...c.params, initialEmissionPerCycle: BigInt(value) * TUNNEL_UNIT }, actor);
       break;
     }
+    case "betting":
+      if (value !== "on" && value !== "off") throw new Error("betting on | off");
+      await setBetLimits(db, { bettingPaused: value === "off" }, actor);
+      break;
+    case "bet-limits":
+      if (!/^\d+$/.test(value ?? "") || !/^\d+$/.test(value2 ?? "")) throw new Error("bet-limits <min> <max> in whole $TUNNEL");
+      await setBetLimits(db, { minBet: BigInt(value) * TUNNEL_UNIT, maxBet: BigInt(value2) * TUNNEL_UNIT }, actor);
+      break;
+    case "max-win-bps":
+      await setBetLimits(db, { maxWinBps: Number(value) }, actor);
+      break;
     case "status":
     case undefined:
       break;
@@ -52,6 +66,13 @@ async function main() {
     engineHeartbeat: c.engineHeartbeat,
     openCycle: open ? { id: open.id.toString(), closes: open.closeTs, participants: open.participants } : null,
     pendingPayouts,
+    betting: await casinoLimits(db).then((l) => ({
+      open: !l.bettingPaused,
+      minBet: formatTunnel(l.minBet),
+      maxBet: formatTunnel(l.maxBet),
+      maxWinShare: `${l.maxWinBps / 100}%`,
+      freeBankroll: l.freeBankroll != null ? formatTunnel(l.freeBankroll) : null,
+    })),
   });
   process.exit(0);
 }

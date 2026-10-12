@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { AcceleratorApp } from "@/components/accelerator/AcceleratorApp";
+import { LiveGame } from "@/components/game/GameApp";
 
 export const metadata: Metadata = {
   title: "Accelerator",
-  description: "Configure particles, choose a barrier and deploy them into the TUNNEL accelerator. Free energy every cycle; sign a message to mine, no fees.",
+  description: "Pick a barrier, set your particle energy and fire. Every particle that tunnels through pays out in $TUNNEL, instantly and provably fair.",
 };
 
 export default function AcceleratorPage() {
   return (
     <>
       <h1 className="sr-only">TUNNEL accelerator</h1>
-      <AcceleratorApp />
+      <LiveGame />
     </>
   );
 }

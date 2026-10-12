@@ -57,7 +57,6 @@ export function LaboratoryView() {
   const sol = useMemo(() => solveBarrier(Math.max(1e-4, e), v0, a), [e, v0, a]);
   const T = transmission(e, v0, a);
   const kappa = e < v0 ? Math.sqrt(v0 - e) : 0;
-  const rates = useIndexed<Rate[]>("/api/lab", 30_000);
 
   const fmtE = (x: number) => (units === "electron" ? `${(x * ELECTRON_ENERGY_UNIT_EV).toFixed(2)} eV` : x.toFixed(3));
   const fmtL = (x: number) => (units === "electron" ? `${(x * 0.1).toFixed(3)} nm` : x.toFixed(3));
@@ -172,7 +171,7 @@ export function LaboratoryView() {
       </div>
 
       {/* explanation + records */}
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid gap-5">
         <Panel className="p-6">
           <div className="label mb-4">04 · What you are looking at</div>
           <div className="prose-doc">
@@ -191,55 +190,6 @@ export function LaboratoryView() {
               more physics.
             </p>
           </div>
-        </Panel>
-        <Panel className="overflow-hidden">
-          <PanelHeader index="05" title="Historical experiment records" right={<Badge tone="neutral">observed vs model</Badge>} />
-          {rates.data && !rates.data.available ? (
-            <div className="p-4">
-              <Unavailable what="Historical records" />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
-                <thead>
-                  <tr className="border-b border-line-soft text-left">
-                    {["Cell", "Model T", "Particles", "Observed", "Δ (σ)"].map((h) => (
-                      <th key={h} className="label px-5 py-2.5 font-normal">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(rates.data?.data ?? [])
-                    .slice()
-                    .sort((x, y) => x.barrier - y.barrier || x.level - y.level)
-                    .map((r) => {
-                      const p = r.transmissionPpb / 1e9;
-                      const obs = r.particles ? r.successes / r.particles : 0;
-                      const sigma = r.particles ? Math.sqrt((p * (1 - p)) / r.particles) : 0;
-                      const z = sigma ? (obs - p) / sigma : 0;
-                      return (
-                        <tr key={`${r.barrier}-${r.level}-${r.transmissionPpb}`} className="border-b border-line-soft last:border-0">
-                          <td className="px-5 py-2.5 font-mono text-xs" style={{ color: BARRIER_META[r.barrier].color }}>
-                            {BARRIER_META[r.barrier].short} · {LEVEL_LABELS[r.level]}
-                          </td>
-                          <td className="px-5 py-2.5 font-mono text-xs">{formatPpb(r.transmissionPpb)}</td>
-                          <td className="px-5 py-2.5 font-mono text-xs">{r.particles.toLocaleString()}</td>
-                          <td className="px-5 py-2.5 font-mono text-xs">{(obs * 100).toFixed(2)}%</td>
-                          <td className={cx("px-5 py-2.5 font-mono text-xs", Math.abs(z) > 3 ? "text-amber" : "text-muted")}>{z >= 0 ? "+" : ""}{z.toFixed(2)}</td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-              {rates.data?.available && !rates.data.data?.length && <p className="px-5 py-6 text-sm text-muted">No revealed experiments yet. Records appear as cycles settle.</p>}
-              <p className="border-t border-line-soft px-5 py-3 text-[11px] text-faint">
-                Observed tunneling frequency of every revealed particle, against the model probability. Δ is in binomial standard deviations: with enough
-                particles, |Δ| should rarely exceed 3.
-              </p>
-            </div>
-          )}
         </Panel>
       </div>
     </div>
