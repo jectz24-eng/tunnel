@@ -13,7 +13,15 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "$TUNNEL — Mine through the impossible", template: "%s · $TUNNEL" },
   description: "Fire particles at quantum barriers on Solana. Pick your volatility, charge your energy, and win $TUNNEL every time a particle tunnels through. Instant, provably fair.",
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: { url: "/apple-icon.png", sizes: "180x180" },
+  },
+  openGraph: { images: [{ url: "/brand/tunnel-logo-1024.png", width: 1024, height: 1024 }] },
 };
 
 export const viewport: Viewport = {
