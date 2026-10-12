@@ -3,16 +3,15 @@ import { PageHeader } from "@/components/ui";
 import { HistoryView } from "./HistoryView";
 
 export const metadata: Metadata = {
-  title: "Experiment history",
-  description: "Every TUNNEL mining attempt: wallet, cycle, barrier, energy, probability, randomness, outcome, reward and signature.",
+  title: "Shot history",
+  description: "Every shot fired in the TUNNEL accelerator: player, barrier, particles, bet and payout. Open any shot to verify it yourself.",
 };
 
 export default function HistoryPage() {
   return (
     <>
-      <PageHeader eyebrow="Experiment history" title={<>Every attempt, on the record.</>}>
-        Each experiment is one deployment of particles. Outcomes are derived from the cycle&apos;s public randomness and checked against what the
-        program settled. Open a cycle to re-verify it in your browser.
+      <PageHeader eyebrow="Shot history" title={<>Every shot, on the record.</>}>
+        Every particle ever fired, as it landed. Open a shot to see its seeds and replay each particle in your browser.
       </PageHeader>
       <div className="mx-auto max-w-[1400px] px-4 py-10 sm:px-6">
         <HistoryView />

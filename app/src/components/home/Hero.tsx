@@ -4,8 +4,7 @@ import { formatTunnel } from "@tunnel/sdk";
 import { motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { useRef } from "react";
-import { splitCycles, useChainClock, useCycles } from "@/lib/chain";
-import { formatCountdown } from "@/lib/cycle";
+import { useCasino } from "@/lib/game";
 import { useQuality, particleBudget } from "@/lib/quality";
 import type { Annotation } from "../three/AcceleratorRing";
 import { StaticAccelerator } from "../three/StaticAccelerator";
@@ -15,7 +14,7 @@ const AcceleratorRing = dynamic(() => import("../three/AcceleratorRing"), { ssr:
 
 /** A few labels pinned to parts of the machine (always visible, no scroll choreography). */
 const LABELS: (Annotation & { title: string; detail: string; delay: number })[] = [
-  { id: "ring", anchor: "ringBack", window: [-1, 2], side: "left", title: "Storage ring", detail: "particles circulate until the cycle closes", delay: 0.9 },
+  { id: "ring", anchor: "ringBack", window: [-1, 2], side: "left", title: "Storage ring", detail: "particles charge up before they fire", delay: 0.9 },
   { id: "barrier", anchor: "barrierTop", window: [-1, 2], side: "left", title: "Potential barrier", detail: "height V₀ · width a", delay: 1.15 },
   { id: "transmission", anchor: "transmission", window: [-1, 2], side: "right", title: "Transmission zone", detail: "where tunneled particles emerge", delay: 1.4 },
 ];
@@ -103,7 +102,7 @@ export function Hero() {
           ))}
         </h1>
         <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease, delay: 0.55 }} className="mt-6 max-w-xl text-base leading-relaxed text-fg-2 sm:text-lg">
-          Deploy particles. Defy energy barriers. Discover what makes it through.
+          Charge your particles. Fire them at the barrier. Every one that tunnels through pays out in $TUNNEL, instantly.
         </motion.p>
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease, delay: 0.7 }} className="mt-9 flex flex-wrap gap-3">
           <ButtonLink href="/accelerator" variant="energy" size="lg" className="font-mono uppercase">
@@ -128,25 +127,24 @@ export function Hero() {
   );
 }
 
-/** Live protocol figures; dashes (not zeros) when TUNNEL is unreachable. */
+/** Live accelerator figures; dashes (not zeros) when TUNNEL is unreachable. */
 function LiveStrip() {
-  const { now } = useChainClock(1000);
-  const cycles = useCycles();
-  const p = cycles.protocol.data;
-  const { current } = splitCycles(cycles.data, now);
+  const c = useCasino();
+  const t = c.data?.totals;
+  const open = !!c.data?.bettingOpen;
   const items: [string, string | null, boolean?][] = [
-    ["Current cycle", current ? `#${current.id}` : null],
-    ["Closes in", current ? formatCountdown(current.closeTs - now) : null, true],
-    ["Wallets this cycle", current ? String(current.participants) : null],
-    ["Particles deployed", p ? p.totals.particles.toLocaleString() : null],
-    ["Successful tunnels", p ? p.totals.successes.toLocaleString() : null],
-    ["Emissions reserve", p ? `${formatTunnel(p.reserveAvailable, 0)}` : null],
+    ["Accelerator", c.data ? (open ? "online" : "offline") : null, true],
+    ["Shots fired", t ? t.bets.toLocaleString() : null],
+    ["Particles fired", t ? t.particles.toLocaleString() : null],
+    ["Tunneled through", t ? t.hits.toLocaleString() : null],
+    ["$TUNNEL wagered", t ? formatTunnel(t.wagered, 0) : null],
+    ["Biggest shot", t ? formatTunnel(t.biggestWin) : null],
   ];
   return (
     <div className="border-t border-line-soft bg-bg/50 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1400px] items-center gap-6 overflow-x-auto px-4 py-4 sm:px-6">
         <span className="flex shrink-0 items-center gap-2 font-mono text-[10.5px] tracking-[0.18em] text-cyan">
-          <Dot color={current ? "#00D9FF" : "#4c5a69"} pulse={!!current} /> LIVE
+          <Dot color={open ? "#00D9FF" : "#4c5a69"} pulse={open} /> LIVE
         </span>
         {items.map(([k, v, accent]) => (
           <div key={k} className="flex shrink-0 items-baseline gap-2 border-l border-line-soft pl-6">

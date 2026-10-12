@@ -1,130 +1,84 @@
 "use client";
 
-import { BARRIER_META, LEVEL_LABELS, formatPpb, formatTunnel, scheduledEmission, shortKey } from "@tunnel/sdk";
+import { VOLATILITY, formatMultiplier, formatTunnel, shortKey } from "@tunnel/sdk";
 import Link from "next/link";
-import { useIndexed } from "@/lib/api";
-import { splitCycles, useChainClock, useCycles } from "@/lib/chain";
-import { formatCountdown } from "@/lib/cycle";
+import { getJson } from "@/lib/api";
+import { useCasino } from "@/lib/game";
+import { usePoll } from "@/lib/poll";
 import { Arrow, ButtonLink, Empty, SectionHeading, Unavailable, Val } from "../ui";
 
-/** MINING CYCLES — the live cycle and the emissions reserve. */
-export function MiningCycles() {
-  const { now } = useChainClock(500);
-  const cycles = useCycles();
-  const protocol = cycles.protocol.data;
-  const { current } = splitCycles(cycles.data, now);
-  const loading = cycles.protocol.loading && protocol === undefined;
-  const dur = current ? current.closeTs - current.openTs : (protocol?.params.cycleDurationSecs ?? 600);
-  const progress = current ? Math.min(1, Math.max(0, (now - current.openTs) / dur)) : 0;
-  const R = 92;
-  const C = 2 * Math.PI * R;
-
+/** BY THE NUMBERS — live totals from the accelerator. */
+export function AcceleratorStats() {
+  const c = useCasino();
+  const t = c.data?.totals;
+  const loading = c.data === undefined;
+  const hitRate = t && t.particles ? `${((t.hits / t.particles) * 100).toFixed(1)}%` : t ? "—" : null;
   return (
-    <section className="relative border-y border-line-soft bg-bg-2/40" aria-labelledby="cycles-title">
-      <div className="mx-auto grid max-w-[1400px] gap-12 px-4 py-28 sm:px-6 lg:grid-cols-[1fr_1fr] lg:items-center">
-        <div>
-          <SectionHeading eyebrow="06 / Mining cycles" title={<span id="cycles-title">Every ten minutes, the barrier opens.</span>}>
-            Each cycle gives every wallet a fresh energy allowance and a fixed $TUNNEL budget for everyone. When it closes, a future Solana block supplies the randomness,
-            every particle is resolved, and rewards become claimable. Unused energy expires; unused budget returns to the reserve.
-          </SectionHeading>
-          <dl className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line">
-            {[
-              ["Energy per wallet / cycle", protocol ? `${protocol.params.energyPerCycle} units` : null],
-              ["Cycle budget", current ? `${formatTunnel(current.emissionBudget, 0)} $TUNNEL` : protocol ? `${formatTunnel(scheduledEmission(protocol.params, BigInt(protocol.totals.cycles) + 1n), 0)} $TUNNEL` : null],
-              ["Reserve available", protocol ? `${formatTunnel(protocol.reserveAvailable, 0)}` : null],
-              ["Distributed so far", protocol ? `${formatTunnel(protocol.totals.tokensClaimed, 0)}` : null],
-            ].map(([k, v]) => (
-              <div key={k} className="bg-panel p-5">
-                <dt className="label">{k}</dt>
-                <dd className="mt-2 font-mono text-lg tabular">
-                  <Val v={v} loading={loading} />
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-        <div className="flex justify-center">
-          <div className="relative">
-            <svg viewBox="0 0 220 220" className="size-[300px] sm:size-[360px]" role="img" aria-label={current ? `Cycle ${current.id} ${Math.round(progress * 100)}% elapsed` : "No open cycle"}>
-              <circle cx="110" cy="110" r={R} fill="none" stroke="#1a2532" strokeWidth="2" />
-              {Array.from({ length: 60 }, (_, i) => (
-                <line key={i} x1="110" y1={110 - R - 8} x2="110" y2={110 - R - (i % 5 === 0 ? 14 : 11)} stroke="#26364a" transform={`rotate(${i * 6} 110 110)`} />
-              ))}
-              <circle
-                cx="110"
-                cy="110"
-                r={R}
-                fill="none"
-                stroke="url(#cyc-g)"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeDasharray={`${C * progress} ${C}`}
-                transform="rotate(-90 110 110)"
-                style={{ filter: "drop-shadow(0 0 6px #00D9FF)" }}
-              />
-              <defs>
-                <linearGradient id="cyc-g">
-                  <stop offset="0" stopColor="#2864FF" />
-                  <stop offset="1" stopColor="#00D9FF" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <div className="label">{current ? `Cycle ${current.id}` : "No open cycle"}</div>
-              <div className="mt-2 font-mono text-[44px] font-medium tabular tracking-tight sm:text-[52px]">
-                {current ? formatCountdown(current.closeTs - now) : "--:--"}
-              </div>
-              <div className="mt-1 text-xs text-muted">
-                {current ? `${current.participants} wallets · ${current.particles.reduce((a, b) => a + b, 0n).toString()} particles` : loading ? "connecting…" : !protocol ? "TUNNEL unreachable" : protocol.paused ? "mining paused" : "next cycle opening…"}
-              </div>
+    <section className="relative border-y border-line-soft bg-bg-2/40" aria-labelledby="stats-title">
+      <div className="mx-auto grid max-w-[1400px] gap-12 px-4 py-28 sm:px-6 lg:grid-cols-[1fr_1.2fr] lg:items-center">
+        <SectionHeading eyebrow="06 / By the numbers" title={<span id="stats-title">The accelerator never sleeps.</span>}>
+          Every shot settles the instant it is fired. Winnings land in your balance straight away and withdraw to your wallet as real $TUNNEL whenever you want.
+        </SectionHeading>
+        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line">
+          {[
+            ["Shots fired", t ? t.bets.toLocaleString() : null],
+            ["Particles fired", t ? t.particles.toLocaleString() : null],
+            ["Tunneled through", t ? `${t.hits.toLocaleString()}` : null],
+            ["Tunnel rate", hitRate],
+            ["$TUNNEL wagered", t ? formatTunnel(t.wagered, 0) : null],
+            ["Biggest single shot", t ? formatTunnel(t.biggestWin, 2) : null],
+          ].map(([k, v]) => (
+            <div key={k} className="bg-panel p-6">
+              <dt className="label">{k}</dt>
+              <dd className="mt-2 font-mono text-2xl tabular">
+                <Val v={v} loading={loading} />
+              </dd>
             </div>
-          </div>
-        </div>
+          ))}
+        </dl>
       </div>
     </section>
   );
 }
 
-interface ExperimentRow {
-  cycleId: string;
-  owner: string;
-  seq: number;
-  barrier: number;
-  level: number;
+interface Row {
+  id: string;
+  wallet: string;
+  volatility: number;
+  stake: string;
+  payout: string;
+  wins: number;
   count: number;
-  transmissionPpb: number;
-  successes: number | null;
-  rewardTokens: string | null;
-  status: string;
-  signature: string;
+  multiplierBps: number;
+  createdAt: string;
 }
 
-/** EXPERIMENT ARCHIVE — recent settled attempts from the indexer. */
+/** BIGGEST HITS — top payouts, each one verifiable. */
 export function ArchivePreview() {
-  const res = useIndexed<{ rows: ExperimentRow[]; total: number }>("/api/experiments?pageSize=8&status=settled", 15_000);
+  const res = usePoll("home:big", () => getJson<{ rows: Row[] }>("/api/casino/bets?big=1&limit=8"), 15_000);
   const rows = res.data?.data?.rows ?? [];
   return (
     <section className="mx-auto max-w-[1400px] px-4 py-28 sm:px-6" aria-labelledby="archive-title">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-        <SectionHeading eyebrow="07 / Experiment archive" title={<span id="archive-title">Every attempt, on the record.</span>}>
-          Settled experiments with their barrier, energy, probability and outcome. Each one can be recomputed from the cycle&apos;s public randomness.
+        <SectionHeading eyebrow="07 / Biggest hits" title={<span id="archive-title">The shots everyone is talking about.</span>}>
+          The largest payouts in the accelerator. Open any of them to see its seeds and replay every particle yourself.
         </SectionHeading>
         <ButtonLink href="/history" variant="secondary">
-          Full archive <Arrow />
+          Every shot <Arrow />
         </ButtonLink>
       </div>
       <div className="panel mt-10 overflow-x-auto">
         {res.data && !res.data.available ? (
           <div className="p-4">
-            <Unavailable what="The experiment archive" />
+            <Unavailable what="The shot history" />
           </div>
         ) : rows.length === 0 ? (
-          <Empty title={res.loading ? "Loading experiments…" : "No settled experiments yet"}>Experiments appear here once their cycle has been settled.</Empty>
+          <Empty title={res.loading ? "Loading…" : "No hits yet"}>The first big tunnel lands here.</Empty>
         ) : (
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-line text-left">
-                {["Experiment", "Wallet", "Barrier", "Energy", "Probability", "Outcome", "Reward"].map((h) => (
+                {["Shot", "Player", "Barrier", "Tunneled", "Bet", "Paid"].map((h) => (
                   <th key={h} className="label px-4 py-3 font-normal">
                     {h}
                   </th>
@@ -132,27 +86,31 @@ export function ArchivePreview() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={`${r.cycleId}-${r.owner}-${r.seq}`} className="border-b border-line-soft last:border-0 hover:bg-panel-2/50">
-                  <td className="px-4 py-3 font-mono text-xs">
-                    <Link href={`/history/${r.cycleId}/${r.owner}/${r.seq}`} className="text-fg-2 hover:text-cyan">
-                      C{r.cycleId}·{r.seq}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted">{shortKey(r.owner)}</td>
-                  <td className="px-4 py-3 font-mono text-xs" style={{ color: BARRIER_META[r.barrier].color }}>
-                    {BARRIER_META[r.barrier].short}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {r.count} × {LEVEL_LABELS[r.level]}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{formatPpb(r.transmissionPpb)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {r.successes == null ? "—" : r.successes > 0 ? <span className="text-flare">{r.successes} tunneled</span> : <span className="text-amber">reflected</span>}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{r.rewardTokens != null ? formatTunnel(BigInt(r.rewardTokens)) : "—"}</td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const v = VOLATILITY[r.volatility];
+                return (
+                  <tr key={r.id} className="border-b border-line-soft last:border-0 hover:bg-panel-2/50">
+                    <td className="px-4 py-3 font-mono text-xs">
+                      <Link href={`/history/bet/${r.id}`} className="text-fg-2 hover:text-cyan">
+                        #{r.id}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted">
+                      <Link href={`/profile/${r.wallet}`} className="hover:text-cyan">
+                        {shortKey(r.wallet)}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs" style={{ color: v.color }}>
+                      {v.short} · {formatMultiplier(r.multiplierBps)}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">
+                      {r.wins}/{r.count}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">{formatTunnel(BigInt(r.stake))}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-flare">{formatTunnel(BigInt(r.payout))}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -174,10 +132,15 @@ export function FinalCta() {
           <br />
           <span className="bg-[linear-gradient(95deg,#EAFBFF,#00D9FF_55%,#885BFF)] bg-clip-text text-transparent">the limit.</span>
         </h2>
-        <p className="mt-6 max-w-md text-muted">Free energy every cycle. Real physics. Verifiable outcomes.</p>
-        <ButtonLink href="/accelerator" variant="energy" size="lg" className="mt-10 font-mono uppercase">
-          Enter the accelerator <Arrow />
-        </ButtonLink>
+        <p className="mt-6 max-w-md text-muted">Pick your barrier. Charge your particles. See what breaks through.</p>
+        <div className="mt-10 flex flex-wrap justify-center gap-3">
+          <ButtonLink href="/accelerator" variant="energy" size="lg" className="font-mono uppercase">
+            Enter the accelerator <Arrow />
+          </ButtonLink>
+          <ButtonLink href="/laboratory" variant="secondary" size="lg" className="font-mono uppercase">
+            Practice free
+          </ButtonLink>
+        </div>
       </div>
     </section>
   );

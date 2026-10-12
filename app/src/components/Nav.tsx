@@ -4,9 +4,10 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { splitCycles, useChainClock, useCycles, useDetectedCluster } from "@/lib/chain";
+import { formatTunnel } from "@tunnel/sdk";
+import { useDetectedCluster } from "@/lib/chain";
 import { appConfig, clusterLabel } from "@/lib/config";
-import { formatCountdown } from "@/lib/cycle";
+import { useCasino, usePlayer } from "@/lib/game";
 import { Wordmark } from "./Logo";
 import { SoundToggle } from "./SoundToggle";
 import { ButtonLink, cx } from "./ui";
@@ -62,12 +63,12 @@ export function Nav() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-2 xl:ml-0">
-          <CycleChip />
+          <StatusChip />
           <SoundToggle className="hidden sm:flex" />
           <WalletButton />
           <span className="hidden md:inline-flex">
             <ButtonLink href="/accelerator" variant="energy" size="sm" className="whitespace-nowrap px-3.5 font-mono text-[11px] uppercase tracking-[0.12em]">
-              Start mining
+              Play now
             </ButtonLink>
           </span>
           <button className="flex size-9 items-center justify-center rounded-lg text-fg-2 hover:bg-panel-2 xl:hidden" onClick={() => setOpen((o) => !o)} aria-label="Menu" aria-expanded={open}>
@@ -89,7 +90,7 @@ export function Nav() {
               ))}
               <div className="mt-2 flex items-center gap-2 px-1 sm:col-span-2">
                 <ButtonLink href="/accelerator" variant="energy" size="md" className="flex-1">
-                  Start mining
+                  Play now
                 </ButtonLink>
                 <SoundToggle className="size-10" />
               </div>
@@ -101,11 +102,11 @@ export function Nav() {
   );
 }
 
-function CycleChip() {
+function StatusChip() {
   const detected = useDetectedCluster();
-  const { now } = useChainClock(1000);
-  const cycles = useCycles();
-  const { current } = splitCycles(cycles.data, now);
+  const casino = useCasino();
+  const player = usePlayer();
+  const open = !!casino.data?.bettingOpen;
   const mismatch = detected.data && detected.data !== appConfig.cluster && !(appConfig.cluster === "localnet" && detected.data === "localnet");
   return (
     <Link
@@ -114,21 +115,12 @@ function CycleChip() {
         "hidden h-8 items-center gap-2 whitespace-nowrap rounded-[10px] border px-2.5 font-mono text-[11px] tracking-wide 2xl:flex",
         mismatch ? "border-red/40 text-red" : "border-line text-fg-2 hover:border-muted/50",
       )}
-      title={mismatch ? `RPC reports ${detected.data}, app is configured for ${appConfig.cluster}` : "Current mining cycle"}
+      title={mismatch ? `RPC reports ${detected.data}, app is configured for ${appConfig.cluster}` : "Accelerator status"}
     >
-      <span className={cx("size-1.5 rounded-full", appConfig.cluster === "mainnet-beta" ? "bg-cyan" : "bg-amber")} />
+      <span className={cx("size-1.5 rounded-full", open ? "bg-cyan shadow-[0_0_8px_#00D9FF]" : "bg-amber")} />
       {clusterLabel[appConfig.cluster]}
       <span className="text-faint">/</span>
-      {current ? (
-        <>
-          <span>C{current.id.toString()}</span>
-          <span className="tabular text-cyan">{formatCountdown(current.closeTs - now)}</span>
-        </>
-      ) : cycles.protocol.data === null ? (
-        "not deployed"
-      ) : (
-        "between cycles"
-      )}
+      {player.data ? <span className="tabular text-cyan">{formatTunnel(player.data.balance)} $TUNNEL</span> : <span>{open ? "accelerator live" : "accelerator offline"}</span>}
     </Link>
   );
 }

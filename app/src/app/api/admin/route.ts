@@ -1,4 +1,4 @@
-import { loadConfig, setParams, setPaused } from "@tunnel/core";
+import { loadConfig, setBetLimits, setParams, setPaused } from "@tunnel/core";
 import { getDb } from "@tunnel/db";
 import { TUNNEL_UNIT } from "@tunnel/sdk";
 import type { NextRequest } from "next/server";
@@ -21,7 +21,9 @@ type Action =
   | { action: "resume" }
   | { action: "cycleDuration"; seconds: number }
   | { action: "emission"; tokensPerCycle: string }
-  | { action: "energy"; perCycle: number };
+  | { action: "energy"; perCycle: number }
+  | { action: "betting"; open: boolean }
+  | { action: "betLimits"; minBet: string; maxBet: string; maxWinBps: number };
 
 /** Admin actions. Every change is written to the ProtocolEvent audit log with the admin wallet. */
 export async function POST(req: NextRequest) {
@@ -52,6 +54,14 @@ export async function POST(req: NextRequest) {
       case "energy": {
         const c = await loadConfig(db);
         await setParams(db, { ...c.params, energyPerCycle: Math.floor(Number(body.perCycle)) }, auth.wallet);
+        break;
+      }
+      case "betting":
+        await setBetLimits(db, { bettingPaused: !body.open }, auth.wallet);
+        break;
+      case "betLimits": {
+        if (!/^d{1,12}$/.test(String(body.minBet)) || !/^d{1,12}$/.test(String(body.maxBet))) return json({ error: "whole $TUNNEL amounts" }, { status: 400 });
+        await setBetLimits(db, { minBet: BigInt(body.minBet) * TUNNEL_UNIT, maxBet: BigInt(body.maxBet) * TUNNEL_UNIT, maxWinBps: Math.floor(Number(body.maxWinBps)) }, auth.wallet);
         break;
       }
       default:

@@ -15,9 +15,10 @@ export function PhysicsSection() {
     <section className="mx-auto max-w-[1400px] px-4 py-28 sm:px-6 sm:py-32" aria-labelledby="physics-title">
       <div className="grid gap-14 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
         <div>
-          <SectionHeading eyebrow="05 / The physics" title={<span id="physics-title">The odds are an equation, not a setting.</span>}>
+          <SectionHeading eyebrow="05 / The physics" title={<span id="physics-title">Built on a real quantum effect.</span>}>
             For a particle of energy E meeting a rectangular barrier of height V₀ and width a, quantum mechanics gives the transmission probability exactly.
-            The TUNNEL program evaluates this formula itself whenever parameters change, and stores the result. Nobody can set the odds directly.
+            The three walls in the accelerator are modelled on it: taller and wider means rarer. In the game, each barrier&apos;s win chance and payout are
+            fixed and always shown before you fire.
           </SectionHeading>
           <div className="panel mt-8 p-5">
             <div className="label">Transmission coefficient, E &lt; V₀</div>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ProfileView } from "./ProfileView";
 
-export const metadata: Metadata = { title: "Wallet profile", description: "A wallet's TUNNEL experiments, success rate, rewards and participation timeline." };
+export const metadata: Metadata = { title: "Player", description: "A TUNNEL player: shots, tunnel rate, volume and biggest hits." };
 
 export default async function ProfilePage({ params }: { params: Promise<{ wallet: string }> }) {
   const { wallet } = await params;

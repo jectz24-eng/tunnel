@@ -1,5 +1,5 @@
 import "server-only";
-import { claimableFor, loadConfig, publicCycle, reserveAvailable } from "@tunnel/core";
+import { casinoLimits, claimableFor, loadConfig, publicCycle, reserveAvailable } from "@tunnel/core";
 import type { getDb } from "@tunnel/db";
 import { oddsToJson, paramsToJson } from "@tunnel/sdk";
 
@@ -305,9 +305,28 @@ export async function adminOverview(db: Db) {
     db.position.aggregate({ where: { settled: true, payout: { gt: 0 }, payoutId: null }, _sum: { payout: true }, _count: { _all: true } }),
     db.payout.findMany({ where: { status: { in: ["requested", "sending"] } }, orderBy: { id: "asc" }, take: 100 }),
     db.payout.findMany({ where: { status: "failed" }, orderBy: { id: "desc" }, take: 30 }),
-    db.protocolEvent.findMany({ where: { name: { in: ["ParamsUpdated", "MiningPaused", "MiningResumed", "ReserveFunded", "CycleVoided", "ClaimFailed"] } }, orderBy: { id: "desc" }, take: 30 }),
+    db.protocolEvent.findMany({ where: { name: { in: ["ParamsUpdated", "MiningPaused", "MiningResumed", "ReserveFunded", "CycleVoided", "ClaimFailed", "BetLimitsUpdated", "WithdrawalFailed"] } }, orderBy: { id: "desc" }, take: 30 }),
+  ]);
+  const [limits, accounts, betAgg] = await Promise.all([
+    casinoLimits(db),
+    db.account.aggregate({ _sum: { balance: true, wagered: true, returned: true, deposited: true, withdrawn: true }, _count: { _all: true } }),
+    db.bet.aggregate({ _count: { _all: true } }),
   ]);
   return {
+    casino: {
+      bettingOpen: !limits.bettingPaused,
+      minBet: limits.minBet,
+      maxBet: limits.maxBet,
+      maxWinBps: limits.maxWinBps,
+      freeBankroll: limits.freeBankroll,
+      playerBalances: accounts._sum.balance ?? 0n,
+      players: accounts._count._all,
+      bets: betAgg._count._all,
+      wagered: accounts._sum.wagered ?? 0n,
+      returned: accounts._sum.returned ?? 0n,
+      deposited: accounts._sum.deposited ?? 0n,
+      withdrawn: accounts._sum.withdrawn ?? 0n,
+    },
     config: state.config,
     totals: state.totals,
     failedActions,

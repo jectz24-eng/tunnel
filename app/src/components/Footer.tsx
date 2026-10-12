@@ -13,13 +13,12 @@ export function Footer() {
             <span className="text-[13px] font-semibold tracking-[0.34em]">TUNNEL</span>
           </div>
           <p className="mt-5 max-w-sm text-xs leading-relaxed text-muted">
-            Quantum Tunneling Protocol. Tunneling probabilities come from a simplified one-dimensional barrier model; individual outcomes come from
-            committed server seeds combined with future Solana blockhashes, so anyone can verify them. This is not quantum computing and not proof-of-work mining. Mining is free; rewards are limited and
-            probabilistic, and $TUNNEL has no guaranteed value.
+            Fire particles at quantum barriers and win $TUNNEL every time one tunnels through. Every result is provably fair and verifiable. 18+ only.
+            Play responsibly and only with what you can afford to lose. Not available where prohibited.
           </p>
         </div>
         <FooterCol title="Protocol" links={[["Accelerator", "/accelerator"], ["How it works", "/how-it-works"], ["Laboratory", "/laboratory"], ["Tokenomics", "/tokenomics"]]} />
-        <FooterCol title="Records" links={[["Experiment history", "/history"], ["Leaderboard", "/leaderboard"], ["Risks", "/tokenomics#risks"], ["Randomness", "/how-it-works#randomness"]]} />
+        <FooterCol title="Records" links={[["Shot history", "/history"], ["Leaderboard", "/leaderboard"], ["Risks", "/tokenomics#risks"], ["Provably fair", "/how-it-works#fair"]]} />
         <div>
           <div className="label">Network</div>
           <div className="mt-3 space-y-2 text-xs text-muted">

@@ -51,3 +51,15 @@ for three things only:
 5. **Claim** (web + engine): the wallet signs a claim message; all settled, unpaid positions are bundled into one `Payout`; the engine signs the transfer, saves its signature and `lastValidBlockHeight`, then broadcasts. It is re-signed only after that blockhash has provably expired unconfirmed, so a payout can never land twice.
 
 See `RANDOMNESS.md` for the fairness argument and `SECURITY.md` for the trust model.
+
+## The accelerator (instant $TUNNEL shots)
+
+The live accelerator is an instant game; the cycle engine above is off by default (`ENGINE_CYCLES=true` re-enables it).
+
+* **Barrier = volatility.** LOW / MEDIUM / HIGH have fixed win chances and multipliers (`VOLATILITY` in `packages/sdk/src/casino.ts`).
+* **Particle energy = stake per particle**, **particles = simultaneous shots** (1–20). Total bet = energy × particles.
+* **Balances** live in `Account`. Deposits are SPL transfers to the vault, credited once finalized by the engine's deposit watcher (`services/engine/src/deposits.ts`, keyed by transaction signature). Withdrawals are signed messages that become `Payout` rows (`kind = withdrawal`) sent by the same exactly-once payout loop; a failed transfer re-credits the balance.
+* **Bets** (`placeBet` in `packages/core/src/casino.ts`) run in one transaction holding the account row lock: limits, max-win vs free bankroll, debit, resolve, credit.
+* **Provably fair:** per-wallet server seed (only its SHA-256 shown until rotation), player client seed, nonce. Particle *i* = HMAC-SHA256(serverSeed, `TUNNEL/bet/v1:clientSeed:nonce:i`), first 8 bytes vs the win threshold. `/history/bet/[id]` recomputes a shot in the browser once its seed is revealed.
+* **Laboratory** runs the same `resolveBet` in the browser with free practice credits.
+* Operator controls: `/admin` or `npm run admin -- betting on|off | bet-limits <min> <max> | max-win-bps <bps>`.

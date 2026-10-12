@@ -1,5 +1,5 @@
 import { BarrierChoice } from "@/components/home/BarrierChoice";
-import { ArchivePreview, FinalCta, MiningCycles } from "@/components/home/CyclesAndArchive";
+import { AcceleratorStats, ArchivePreview, FinalCta } from "@/components/home/CyclesAndArchive";
 import { Hero } from "@/components/home/Hero";
 import { LiveAccelerator } from "@/components/home/LiveAccelerator";
 import { Phenomenon } from "@/components/home/Phenomenon";
@@ -27,7 +27,7 @@ export default function HomePage() {
         <PhysicsSection />
       </Reveal>
       <Reveal>
-        <MiningCycles />
+        <AcceleratorStats />
       </Reveal>
       <Reveal>
         <ArchivePreview />

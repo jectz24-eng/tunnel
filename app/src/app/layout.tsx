@@ -12,8 +12,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "$TUNNEL — Mine through the impossible", template: "%s · $TUNNEL" },
-  description:
-    "Quantum Tunneling Protocol on Solana. Deploy particles against potential barriers, let verifiable randomness decide what tunnels through, and earn $TUNNEL from a fixed emissions reserve.",
+  description: "Fire particles at quantum barriers on Solana. Pick your volatility, charge your energy, and win $TUNNEL every time a particle tunnels through. Instant, provably fair.",
   icons: { icon: "/icon.svg" },
 };
 

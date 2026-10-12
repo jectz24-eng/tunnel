@@ -4,34 +4,32 @@ import { TokenomicsView } from "./TokenomicsView";
 
 export const metadata: Metadata = {
   title: "Tokenomics",
-  description: "$TUNNEL supply, the emissions reserve, cycle budgets, claimed rewards, addresses, and the risks of a probabilistic protocol.",
+  description: "$TUNNEL: the token that powers the accelerator. Supply, the vault, deposits and withdrawals, addresses, and what to know before you play.",
 };
 
 const SECTIONS: [string, string, string][] = [
-  ["the-token", "The token", "$TUNNEL is an SPL token with 6 decimals. TUNNEL never mints it: rewards are paid only from a reserve transferred into the TUNNEL reward wallet in advance. Revoking the mint authority fixes the supply permanently; the page above shows whether that has happened."],
-  ["the-emissions", "The emissions", "Every cycle reserves a budget from the reserve: a scheduled amount that decays slowly over time, capped by what is left. At settlement the cycle pays what its particles earned, up to the budget, scaling everyone down equally if needed. Anything unused returns to the reserve."],
-  ["the-energy", "The energy system", "Participation costs energy, not money. Each wallet gets a fixed allowance per cycle that expires unused. Energy is not a token, cannot be bought or transferred, and has no value outside a cycle."],
-  ["the-physics", "The physics", "Each barrier's tunneling probability comes from the rectangular-barrier transmission formula evaluated by the program. Rewards are calibrated to those probabilities so the expected value per unit of energy is the same across energy levels."],
-  ["the-randomness", "The randomness", "Each cycle's outcomes come from a server seed committed before anyone deploys, combined with a Solana blockhash that does not exist until deployments close. The seed is revealed afterwards, so anyone can recompute every particle."],
-  ["the-treasury", "The treasury", "TUNNEL charges no fees and keeps no treasury. The only protocol-controlled funds are the $TUNNEL and a little SOL in the reward wallet, which pays claims and their network fees."],
+  ["the-token", "The token", "$TUNNEL is an SPL token on Solana with 6 decimals. It is the only currency in the accelerator: you fire particles with it and every tunnel pays out in it. Revoking the mint authority fixes the supply forever; the panel above shows whether that has happened."],
+  ["the-vault", "The vault", "Deposits go to the TUNNEL vault wallet, whose balance anyone can check on Solana. Your balance is credited the moment the transfer finalizes, and every withdrawal is a real $TUNNEL transfer back to your wallet."],
+  ["the-shots", "The shots", "Each particle is an independent shot at the barrier you choose. Low, medium and high barriers have fixed win chances and multipliers, shown before you fire. Bet size and particle count are up to you within the table limits."],
+  ["the-fairness", "Provably fair", "Every shot is decided by HMAC-SHA256 of a server seed (its hash is shown before you play), your own client seed, and a counter. Rotate your seed at any time to reveal the old one and verify every past shot in your browser."],
+  ["the-practice", "Practice", "The Laboratory runs the exact same barriers, multipliers and draw function with free practice credits, so you can test strategies before using real $TUNNEL."],
+  ["the-limits", "Table limits", "Minimum and maximum bets keep the accelerator healthy for everyone. A single shot's maximum win is also capped to a share of the vault, shown in the accelerator before you fire."],
 ];
 
 const RISKS = [
-  "Rewards are probabilistic. You may deploy particles for many cycles and receive nothing.",
-  "Rewards are limited: per-cycle budgets cap total payouts, and heavy participation scales individual rewards down.",
-  "$TUNNEL has no guaranteed price, liquidity or value. Nothing here is investment advice or a promise of returns.",
-  "The program has not been independently audited. Smart contracts can contain bugs that lead to loss of rewards.",
-  "TUNNEL runs on its own server, not a smart contract. You rely on it to stay online, settle every cycle and pay claims from its reward wallet. Outages can delay or void cycles.",
-  "Parameters for future cycles can be changed by the admin (never for an open cycle). Production should use a multisig.",
-  "Many wallets controlled by one person can dilute others within a cycle's budget; rate limiting mitigates but does not prevent this.",
-  "Local laws may restrict participation in token distributions. You are responsible for compliance where you live.",
+  "Every shot is a game of chance. You can lose your entire bet, and past results never predict the next particle.",
+  "Only play with $TUNNEL you can afford to lose. Set yourself limits and take breaks.",
+  "The accelerator is for adults (18+) only, and only where games of chance with digital assets are legal.",
+  "$TUNNEL has no guaranteed price, liquidity or value. Nothing here is investment advice.",
+  "Balances are held by the TUNNEL vault, operated by the TUNNEL team. Withdraw whenever you like; you rely on TUNNEL to process it.",
+  "TUNNEL has not been independently audited. Software can contain bugs.",
 ];
 
 export default function TokenomicsPage() {
   return (
     <>
-      <PageHeader eyebrow="Tokenomics & protocol" title={<>A fixed reserve. A transparent flow.</>}>
-        Every live figure on this page is read from chain. Allocations that have not been configured are labelled as placeholders.
+      <PageHeader eyebrow="Tokenomics" title={<>One token. One accelerator.</>}>
+        $TUNNEL powers every shot. Live figures on this page come straight from Solana; allocations that have not been finalized are marked as placeholders.
       </PageHeader>
       <TokenomicsView />
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6">
@@ -44,7 +42,7 @@ export default function TokenomicsPage() {
           ))}
         </div>
         <section id="risks" className="mt-10 scroll-mt-24 rounded-2xl border border-amber/25 bg-amber/[0.03] p-7">
-          <h2 className="font-mono text-[12px] uppercase tracking-[0.18em] text-amber">The risks</h2>
+          <h2 className="font-mono text-[12px] uppercase tracking-[0.18em] text-amber">Play responsibly</h2>
           <ul className="mt-5 grid gap-3 md:grid-cols-2">
             {RISKS.map((r) => (
               <li key={r} className="flex gap-3 text-sm leading-relaxed text-fg-2">

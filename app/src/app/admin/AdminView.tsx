@@ -10,6 +10,7 @@ import { refreshMatching, usePoll } from "@/lib/poll";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Overview {
+  casino: Record<string, any>;
   config: Record<string, any>;
   totals: Record<string, any>;
   failedActions: { id: string; kind: string; cycleId: string | null; error: string | null; createdAt: string }[];
@@ -38,8 +39,9 @@ export function AdminView() {
   );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [dur, setDur] = useState("");
-  const [emission, setEmission] = useState("");
+  const [minBet, setMinBet] = useState("");
+  const [maxBet, setMaxBet] = useState("");
+  const [maxWin, setMaxWin] = useState("");
 
   const act = async (body: Record<string, unknown>, label: string) => {
     setBusy(true);
@@ -68,48 +70,38 @@ export function AdminView() {
   const o = overview.data?.body?.data;
   if (!o) return <Empty title={overview.data?.body.available === false ? "Database unavailable" : "Loading operations data…"} />;
   const c = o.config;
+  const k = o.casino;
+  const tok = (v: unknown) => (v == null ? "—" : formatTunnel(BigInt(v as string), 0));
 
   return (
     <div className="mx-auto grid max-w-[1400px] gap-5 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px]">
       <div className="grid min-w-0 gap-5">
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line md:grid-cols-4">
           {[
-            ["Mining", c.paused ? "PAUSED" : "running"],
+            ["Accelerator", k.bettingOpen ? "live" : "PAUSED"],
             ["Engine", c.engineOnline ? "online" : "OFFLINE"],
-            ["Reserve unallocated", formatTunnel(BigInt(c.reserveAvailable), 0)],
-            ["Reward wallet $TUNNEL", c.rewardWalletTokens != null ? formatTunnel(BigInt(c.rewardWalletTokens), 0) : "—"],
-            ["Reward wallet SOL", c.rewardWalletLamports != null ? formatSol(BigInt(c.rewardWalletLamports), 4) : "—"],
-            ["Unclaimed owed", `${formatTunnel(BigInt(o.unclaimed.tokens))} · ${o.unclaimed.positions} pos.`],
-            ["Payout queue", String(o.payoutQueue.length)],
-            ["Stuck cycles", String(o.stuck.length)],
-          ].map(([k, v]) => (
-            <div key={k} className="bg-panel px-5 py-4">
-              <dt className="label">{k}</dt>
+            ["Vault $TUNNEL", tok(c.rewardWalletTokens)],
+            ["Vault SOL (fees)", c.rewardWalletLamports != null ? formatSol(BigInt(c.rewardWalletLamports), 4) : "—"],
+            ["Owed to players", tok(k.playerBalances)],
+            ["Free bankroll", tok(k.freeBankroll)],
+            ["Players · shots", `${k.players} · ${Number(k.bets).toLocaleString()}`],
+            ["Wagered", tok(k.wagered)],
+            ["Paid back to players", tok(k.returned)],
+            ["Net to vault", tok(BigInt(k.wagered) - BigInt(k.returned))],
+            ["Deposited · withdrawn", `${tok(k.deposited)} · ${tok(k.withdrawn)}`],
+            ["Withdrawal queue", String(o.payoutQueue.length)],
+          ].map(([key, v]) => (
+            <div key={key} className="bg-panel px-5 py-4">
+              <dt className="label">{key}</dt>
               <dd className={`mt-1.5 font-mono text-[15px] tabular ${v === "OFFLINE" || v === "PAUSED" ? "text-amber" : ""}`}>{v}</dd>
             </div>
           ))}
         </dl>
 
         <Panel className="overflow-hidden">
-          <PanelHeader title="Cycles by status" />
-          <div className="flex flex-wrap gap-2 p-5">
-            {o.statusCounts.map((s) => (
-              <Badge key={s.status} tone={s.status === "void" ? "red" : s.status === "settled" ? "flare" : "neutral"}>
-                {s.status} · {s.count}
-              </Badge>
-            ))}
-          </div>
-          {o.stuck.length > 0 && (
-            <div className="border-t border-amber/20 bg-amber/[0.04] px-5 py-3 text-sm text-amber">
-              Closed for more than 15 min without settlement: {o.stuck.map((x) => `#${x.id}`).join(", ")}. Check the engine and its RPC; after ENGINE_VOID_AFTER_MS the engine voids them.
-            </div>
-          )}
-        </Panel>
-
-        <Panel className="overflow-hidden">
-          <PanelHeader title="Payout queue" />
+          <PanelHeader title="Withdrawal queue" />
           {!o.payoutQueue.length ? (
-            <Empty title="No payouts waiting" />
+            <Empty title="No withdrawals waiting" />
           ) : (
             <ul className="divide-y divide-line-soft font-mono text-xs">
               {o.payoutQueue.map((p) => (
@@ -134,7 +126,7 @@ export function AdminView() {
         </Panel>
 
         <Panel className="overflow-hidden">
-          <PanelHeader title="Failed payouts (returned to claimable)" />
+          <PanelHeader title="Failed withdrawals (returned to balance)" />
           {!o.failedPayouts.length ? (
             <Empty title="None" />
           ) : (
@@ -174,30 +166,38 @@ export function AdminView() {
           <PanelHeader title="Controls" right={<Badge tone="amber">logged</Badge>} />
           <div className="space-y-5 p-5 text-sm">
             <div>
-              <div className="label mb-2">Mining</div>
-              <Button variant={c.paused ? "primary" : "danger"} disabled={busy} onClick={() => act({ action: c.paused ? "resume" : "pause" }, c.paused ? "Resume" : "Pause")}>
-                {c.paused ? "Resume mining" : "Pause mining"}
+              <div className="label mb-2">Accelerator</div>
+              <Button variant={k.bettingOpen ? "danger" : "primary"} disabled={busy} onClick={() => act({ action: "betting", open: !k.bettingOpen }, k.bettingOpen ? "Pause" : "Open")}>
+                {k.bettingOpen ? "Pause the accelerator" : "Open the accelerator"}
               </Button>
-              <p className="mt-2 text-[11px] text-faint">Pausing stops new cycles and deployments. Settlement and payouts continue.</p>
+              <p className="mt-2 text-[11px] text-faint">Pausing stops new shots. Deposits and withdrawals keep working.</p>
             </div>
             <div>
-              <div className="label mb-2">Future cycles</div>
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <input value={dur} onChange={(e) => setDur(e.target.value)} placeholder={`cycle seconds (now ${c.params.cycleDurationSecs})`} className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs" />
-                <Button size="sm" disabled={busy || !/^\d+$/.test(dur)} onClick={() => act({ action: "cycleDuration", seconds: Number(dur) }, "Cycle length")}>
-                  Update
-                </Button>
-                <input
-                  value={emission}
-                  onChange={(e) => setEmission(e.target.value)}
-                  placeholder={`$TUNNEL per cycle (now ${formatTunnel(BigInt(c.params.initialEmissionPerCycle), 0)})`}
-                  className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs"
-                />
-                <Button size="sm" disabled={busy || !/^\d+$/.test(emission)} onClick={() => act({ action: "emission", tokensPerCycle: emission }, "Emission")}>
-                  Update
-                </Button>
+              <div className="label mb-2">Table limits</div>
+              <div className="grid grid-cols-3 gap-2">
+                <input value={minBet} onChange={(e) => setMinBet(e.target.value)} placeholder={`min ${tok(k.minBet)}`} className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs" />
+                <input value={maxBet} onChange={(e) => setMaxBet(e.target.value)} placeholder={`max ${tok(k.maxBet)}`} className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs" />
+                <input value={maxWin} onChange={(e) => setMaxWin(e.target.value)} placeholder={`max win ${k.maxWinBps / 100}%`} className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs" />
               </div>
-              <p className="mt-2 text-[11px] leading-relaxed text-faint">Applies to cycles opened afterwards. Every change is recorded in the audit log with your wallet.</p>
+              <Button
+                size="sm"
+                className="mt-2"
+                disabled={busy}
+                onClick={() =>
+                  act(
+                    {
+                      action: "betLimits",
+                      minBet: minBet || String(BigInt(k.minBet) / 1_000_000n),
+                      maxBet: maxBet || String(BigInt(k.maxBet) / 1_000_000n),
+                      maxWinBps: maxWin ? Math.round(Number(maxWin) * 100) : k.maxWinBps,
+                    },
+                    "Limits",
+                  )
+                }
+              >
+                Update limits
+              </Button>
+              <p className="mt-2 text-[11px] leading-relaxed text-faint">Bets per particle in whole $TUNNEL. Max win is the share (%) of the free bankroll one shot may win. Every change is logged.</p>
             </div>
             {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-line text-muted" : "border-red/30 text-red"}`}>{msg.text}</div>}
           </div>
@@ -206,7 +206,7 @@ export function AdminView() {
           <PanelHeader title="Addresses" />
           <dl className="space-y-2 p-5 font-mono text-[11px]">
             <div className="flex justify-between gap-2">
-              <dt className="text-muted">reward wallet</dt>
+              <dt className="text-muted">vault</dt>
               <dd className="break-all text-right">{c.rewardWallet ?? "—"}</dd>
             </div>
             <div className="flex justify-between gap-2">

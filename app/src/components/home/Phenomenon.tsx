@@ -40,9 +40,8 @@ export function Phenomenon() {
             </div>
           </dl>
           <p className="mt-6 max-w-lg text-sm leading-relaxed text-muted">
-            The same relationship sets the odds in TUNNEL: every barrier&apos;s height V₀ and width a, together with the particle energy you allocate,
-            fix a tunneling probability before any randomness is drawn.
-          </p>
+            The same idea powers TUNNEL: the taller and wider the barrier, the rarer the tunnel, and the bigger the payout when a particle makes it through.
+            </p>
         </div>
 
         <div className="panel brackets overflow-hidden">

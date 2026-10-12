@@ -1,7 +1,8 @@
 "use client";
 
-import { useDetectedCluster, useProtocol } from "@/lib/chain";
+import { useDetectedCluster } from "@/lib/chain";
 import { appConfig, clusterLabel, explorerAddress } from "@/lib/config";
+import { useCasino } from "@/lib/game";
 
 const link = (v: string | null | undefined) =>
   v ? (
@@ -12,20 +13,17 @@ const link = (v: string | null | undefined) =>
     "—"
   );
 
-/** Live deployment facts. */
+/** Live accelerator facts. */
 export function DeploymentStatus() {
-  const protocol = useProtocol();
+  const casino = useCasino();
   const cluster = useDetectedCluster();
-  const p = protocol.data;
+  const c = casino.data;
   const rows: [string, React.ReactNode][] = [
-    ["Token network", clusterLabel[appConfig.cluster]],
+    ["Network", clusterLabel[appConfig.cluster]],
     ["RPC reports", cluster.data ?? (cluster.error ? "unreachable" : "…")],
-    ["TUNNEL server", protocol.loading && p === undefined ? "…" : p ? "online" : "unreachable"],
-    ["Cycle engine", p ? (p.engineOnline ? "running" : "offline") : "—"],
-    ["$TUNNEL mint", link(p?.tunnelMint)],
-    ["Reward wallet", link(p?.rewardWallet)],
-    ["Mining", p ? (p.paused ? "paused" : "running") : "—"],
-    ["Smart contract", "none: game logic runs on the TUNNEL server; rewards are real SPL transfers"],
+    ["Accelerator", c === undefined ? "…" : !c ? "unreachable" : c.bettingOpen ? "live" : "paused"],
+    ["$TUNNEL mint", link(c?.tunnelMint)],
+    ["Vault", link(c?.depositAddress)],
     ["Independent audit", "not performed"],
   ];
   return (

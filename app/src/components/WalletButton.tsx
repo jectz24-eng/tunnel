@@ -96,10 +96,10 @@ export function WalletButton({ className }: { className?: string }) {
               {auth.status === "verified" ? "Wallet ownership verified" : auth.status === "signing" ? "Waiting for signature…" : "Verify wallet ownership"}
             </MenuItem>
             <Link href={`/profile/${key}`} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
-              My experiments
+              My shots
             </Link>
-            <Link href="/accelerator#claims" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
-              Claim rewards
+            <Link href="/accelerator" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
+              Deposit &amp; withdraw
             </Link>
             <a href={explorerAddress(key)} target="_blank" rel="noreferrer" className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
               View on Explorer
@@ -173,7 +173,7 @@ export function WalletPicker({ open, onClose }: { open: boolean; onClose: () => 
               </button>
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-muted">
-              TUNNEL never asks for your seed phrase or private key. Mining and claiming only ask you to sign free messages.
+              TUNNEL never asks for your seed phrase or private key. Playing only asks you to sign free messages; deposits are a normal transfer you approve.
             </p>
             <div className="mt-4 space-y-2">
               {available.map((w) => (

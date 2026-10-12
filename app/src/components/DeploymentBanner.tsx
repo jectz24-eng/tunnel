@@ -1,23 +1,14 @@
 "use client";
 
-import { useProtocol } from "@/lib/chain";
+import { useCasino } from "@/lib/game";
 
-/**
- * States plainly when TUNNEL is unreachable, paused or its engine is down,
- * so empty values are never mistaken for real zeroes.
- */
+/** States plainly when the accelerator is unreachable or paused, so empty values are never mistaken for zeroes. */
 export function DeploymentBanner() {
-  const protocol = useProtocol();
-  if (protocol.data === undefined) return null;
-  if (protocol.data === null) {
-    return <Bar tone="red">TUNNEL is temporarily unreachable. Live values are unavailable until it recovers; your positions and rewards are safe.</Bar>;
-  }
-  if (protocol.data.paused) {
-    return <Bar tone="amber">Mining is paused right now. Settled rewards can still be claimed.</Bar>;
-  }
-  if (!protocol.data.engineOnline) {
-    return <Bar tone="amber">The cycle engine is catching up. Cycles will resume shortly; nothing is lost.</Bar>;
-  }
+  const casino = useCasino();
+  if (casino.data === undefined) return null;
+  if (casino.data === null) return <Bar tone="red">TUNNEL is temporarily unreachable. Your balance is safe; live values return as soon as it reconnects.</Bar>;
+  if (!casino.data.engineOnline) return <Bar tone="amber">The accelerator is reconnecting. Shots resume in a moment; balances are safe.</Bar>;
+  if (!casino.data.bettingOpen) return <Bar tone="amber">The accelerator is paused right now. Withdrawals keep working.</Bar>;
   return null;
 }
 
