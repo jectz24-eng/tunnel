@@ -3,7 +3,7 @@ import { getDb } from "@tunnel/db";
 import { TUNNEL_UNIT } from "@tunnel/sdk";
 import type { NextRequest } from "next/server";
 import { requireAdmin } from "@/server/admin";
-import { indexed, json } from "@/server/http";
+import { crossOrigin, indexed, json } from "@/server/http";
 import { protocolErrorResponse } from "@/server/protocol";
 import { adminOverview } from "@/server/queries";
 import { readSettings, saveSettings } from "@/server/settings";
@@ -32,8 +32,7 @@ export async function POST(req: NextRequest) {
   const auth = requireAdmin(req);
   if (!auth.ok) return json({ error: auth.error }, { status: auth.status });
   // Same-origin only: the session cookie is SameSite=Strict, this is defence in depth.
-  const origin = req.headers.get("origin");
-  if (origin && origin !== req.nextUrl.origin) return json({ error: "cross-origin request refused" }, { status: 403 });
+  if (crossOrigin(req)) return json({ error: "cross-origin request refused" }, { status: 403 });
   const body = (await req.json().catch(() => null)) as Action | null;
   const db = getDb();
   try {

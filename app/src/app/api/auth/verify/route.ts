@@ -2,7 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import type { NextRequest } from "next/server";
 import nacl from "tweetnacl";
 import { getDb, hasDatabase } from "@tunnel/db";
-import { isBase58Address, json } from "@/server/http";
+import { isBase58Address, json, publicOrigin } from "@/server/http";
 import { SESSION_COOKIE, checkSignInMessage, issueSession } from "@/server/session";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   if (!body || !isBase58Address(body.address ?? null) || typeof body.message !== "string" || !Array.isArray(body.signature)) {
     return json({ error: "malformed request" }, { status: 400 });
   }
-  const problem = checkSignInMessage(body.message, body.address!, req.nextUrl.origin);
+  const problem = checkSignInMessage(body.message, body.address!, publicOrigin(req));
   if (problem) return json({ error: problem }, { status: 401 });
 
   const ok = nacl.sign.detached.verify(

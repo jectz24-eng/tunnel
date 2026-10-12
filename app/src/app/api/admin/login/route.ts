@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { checkAdminPassword } from "@/server/admin";
-import { json } from "@/server/http";
+import { crossOrigin, json } from "@/server/http";
 import { clientIp, rateLimit } from "@/server/ratelimit";
 import { ADMIN_COOKIE, issueAdminSession } from "@/server/session";
 
@@ -10,8 +10,7 @@ const cookie = { httpOnly: true, sameSite: "strict", secure: process.env.NODE_EN
 
 /** Password sign-in for /admin. Rate limited per IP and globally against guessing. */
 export async function POST(req: NextRequest) {
-  const origin = req.headers.get("origin");
-  if (origin && origin !== req.nextUrl.origin) return json({ error: "cross-origin request refused" }, { status: 403 });
+  if (crossOrigin(req)) return json({ error: "cross-origin request refused" }, { status: 403 });
   const [ip, all] = await Promise.all([rateLimit(`admin-login:ip:${clientIp(req.headers)}`, 5, 15 * 60_000), rateLimit("admin-login:all", 30, 15 * 60_000)]);
   if (!ip.allowed || !all.allowed) return json({ error: "too many attempts, try again in 15 minutes" }, { status: 429 });
   const body = (await req.json().catch(() => null)) as { password?: unknown } | null;

@@ -2,6 +2,23 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { getDb, hasDatabase } from "@tunnel/db";
 
+/**
+ * The origin the browser sees. Behind a proxy (Render) `req.nextUrl.origin` is the
+ * internal address, so prefer the forwarded host/proto headers the proxy sets.
+ */
+export function publicOrigin(req: { headers: Headers; nextUrl: URL }): string {
+  const host = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || req.headers.get("host");
+  if (!host) return req.nextUrl.origin;
+  const proto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.nextUrl.protocol.replace(":", "");
+  return `${proto}://${host}`;
+}
+
+/** True for a request whose Origin header names another site (absent Origin is allowed). */
+export function crossOrigin(req: { headers: Headers; nextUrl: URL }): boolean {
+  const origin = req.headers.get("origin");
+  return !!origin && origin !== publicOrigin(req);
+}
+
 /** JSON response that serialises bigint as decimal strings. */
 export function json(data: unknown, init?: ResponseInit) {
   return new NextResponse(JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() : v)), {

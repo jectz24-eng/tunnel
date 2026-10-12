@@ -10,10 +10,7 @@ type Db = ReturnType<typeof getDb>;
 export const sessionWallet = (req: NextRequest) => readSession(req.cookies.get(SESSION_COOKIE)?.value);
 
 /** Rejects cross-site POSTs (defence in depth on top of the SameSite=Strict cookie). */
-export const crossOrigin = (req: NextRequest) => {
-  const origin = req.headers.get("origin");
-  return !!origin && origin !== req.nextUrl.origin;
-};
+export { crossOrigin } from "./http";
 
 type BetRow = NonNullable<Awaited<ReturnType<Db["bet"]["findUnique"]>>>;
 export const betDto = (b: BetRow) => ({
