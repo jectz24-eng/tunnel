@@ -84,7 +84,7 @@ test("tokenomics labels unconfigured allocations as placeholders and lists risks
 });
 
 test("APIs respond with explicit availability flags and validate input", async ({ request }) => {
-  for (const p of ["/api/stats", "/api/activity", "/api/cycles", "/api/experiments", "/api/leaderboard", "/api/lab"]) {
+  for (const p of ["/api/state", "/api/stats", "/api/activity", "/api/cycles", "/api/experiments", "/api/leaderboard", "/api/lab"]) {
     const r = await request.get(p);
     expect(r.ok()).toBe(true);
     expect(typeof (await r.json()).available).toBe("boolean");
@@ -93,5 +93,20 @@ test("APIs respond with explicit availability flags and validate input", async (
   expect((await request.get("/api/cycles/abc")).status()).toBe(400);
   expect((await request.post("/api/auth/verify", { data: { address: "x" } })).status()).toBe(400);
   expect((await request.get("/api/admin")).status()).toBe(401);
-  expect([401, 409]).toContain((await request.post("/api/gatekeeper", { data: {} })).status());
+  expect((await request.post("/api/admin", { data: { action: "pause" } })).status()).toBe(401);
+  expect((await request.get("/api/me?wallet=nope")).status()).toBe(400);
+  // Signed endpoints reject anything that is not a valid, signed TUNNEL message.
+  expect((await request.post("/api/deploy", { data: {} })).status()).toBe(400);
+  expect((await request.post("/api/deploy", { data: { message: "TUNNEL — deploy particles", signature: "x" } })).status()).toBe(400);
+  expect((await request.post("/api/claim", { data: { message: "hello", signature: "x" } })).status()).toBe(400);
+});
+
+test("the open cycle never exposes its secret seed", async ({ request }) => {
+  const body = await (await request.get("/api/state")).json();
+  test.skip(!body.available, "database not available");
+  for (const c of body.data.recent) {
+    if (c.status === "open" || c.status === "closed") expect(c.serverSeed).toBeNull();
+    else expect(typeof c.serverSeed).toBe("string");
+    expect(c.seedCommitment).toMatch(/^[0-9a-f]{64}$/);
+  }
 });

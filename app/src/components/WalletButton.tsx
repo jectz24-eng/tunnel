@@ -173,7 +173,7 @@ export function WalletPicker({ open, onClose }: { open: boolean; onClose: () => 
               </button>
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-muted">
-              TUNNEL never asks for your seed phrase or private key. Every transaction is approved in your wallet.
+              TUNNEL never asks for your seed phrase or private key. Mining and claiming only ask you to sign free messages.
             </p>
             <div className="mt-4 space-y-2">
               {available.map((w) => (

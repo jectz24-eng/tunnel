@@ -140,7 +140,7 @@ function LiveStrip() {
     <div className="border-t border-line-soft bg-bg/50 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1400px] items-center gap-6 overflow-x-auto px-4 py-4 sm:px-6">
         <span className="flex shrink-0 items-center gap-2 font-mono text-[10.5px] tracking-[0.18em] text-cyan">
-          <Dot color={current ? "#00D9FF" : "#4c5a69"} pulse={!!current} /> LIVE · ONCHAIN
+          <Dot color={current ? "#00D9FF" : "#4c5a69"} pulse={!!current} /> LIVE
         </span>
         {items.map(([k, v, accent]) => (
           <div key={k} className="flex shrink-0 items-baseline gap-2 border-l border-line-soft pl-6">

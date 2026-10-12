@@ -74,7 +74,7 @@ export function HistoryView({ owner }: { owner?: string }) {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search wallet, transaction signature, cycle number or experiment id (cycle-wallet-seq)"
+              placeholder="Search wallet, signature, cycle number or experiment id (cycle-wallet-seq)"
               aria-label="Search experiments"
               className="h-10 w-full rounded-lg border border-line bg-bg-2 pl-9 pr-3 font-mono text-[12.5px] placeholder:text-faint focus:border-cyan/50 focus:outline-none"
             />

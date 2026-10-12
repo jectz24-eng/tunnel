@@ -4,7 +4,7 @@ import { HistoryView } from "./HistoryView";
 
 export const metadata: Metadata = {
   title: "Experiment history",
-  description: "Every TUNNEL mining attempt: wallet, cycle, barrier, energy, probability, randomness, outcome, reward and transaction.",
+  description: "Every TUNNEL mining attempt: wallet, cycle, barrier, energy, probability, randomness, outcome, reward and signature.",
 };
 
 export default function HistoryPage() {
