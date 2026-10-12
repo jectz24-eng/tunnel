@@ -7,7 +7,7 @@
  */
 import { sha256 } from "@noble/hashes/sha2.js";
 import { BPS, PARTICLE_DOMAIN, type OddsTable, type ProtocolParams } from "./constants";
-import { u64le } from "./pda";
+import { u64le } from "./bytes";
 import { PPB, transmissionPpb } from "./physics";
 
 const FIXED_ONE = 10n ** 18n;

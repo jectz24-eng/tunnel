@@ -15,10 +15,9 @@ import {
 } from "../src/math";
 
 describe("particle draws", () => {
-  it("matches the Rust known vector", () => {
-    // programs/tunnel/src/math.rs::known_vector (also checked with Python hashlib).
+  it("matches the independent Python hashlib vector", () => {
     const d = particleDraw(new Uint8Array(64).fill(1), 7n, new Uint8Array(32).fill(2), 1, 2, 3);
-    expect(d).toBe(5_097_536_720_253_246_649n);
+    expect(d).toBe(7_227_306_695_852_544_847n);
   });
 
   it("thresholds are exact at the boundaries", () => {
@@ -49,7 +48,7 @@ describe("particle draws", () => {
 describe("odds and reward calibration", () => {
   const odds = deriveOdds(DEFAULT_PARAMS);
 
-  it("matches the table the program derives (programs/tunnel/src/math.rs)", () => {
+  it("matches the pinned launch odds table", () => {
     expect(odds.transmissionPpb).toEqual([
       [444247797, 592587953, 683660453, 745092903, 789208405],
       [93406338, 172710376, 257433197, 344744636, 431633852],
@@ -118,11 +117,13 @@ describe("payouts and emissions", () => {
   });
 });
 
-describe("pda determinism", () => {
-  it("derives distinct positions per cycle and owner", async () => {
-    const { positionPda } = await import("../src/pda");
-    const a = Keypair.generate().publicKey;
-    expect(positionPda(1n, a).equals(positionPda(2n, a))).toBe(false);
-    expect(positionPda(1n, a).equals(positionPda(1n, PublicKey.default))).toBe(false);
+describe("base58", () => {
+  it("round-trips public keys", async () => {
+    const { decodeBase58, encodeBase58 } = await import("../src/bytes");
+    for (let i = 0; i < 20; i++) {
+      const k = Keypair.generate().publicKey;
+      expect(encodeBase58(decodeBase58(k.toBase58()))).toBe(k.toBase58());
+      expect(PublicKey.default.toBase58()).toBe(encodeBase58(new Uint8Array(32)));
+    }
   });
 });

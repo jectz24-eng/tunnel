@@ -1,93 +1,98 @@
 /**
- * Independent verification of a settled cycle. Given only onchain data (the
- * Cycle account and its Position accounts), recompute every particle outcome
- * and every payout, and compare them to what the program recorded. Also
- * re-derives the cycle's odds table from its physical barrier parameters.
+ * Independent verification of a settled cycle from public data only: the
+ * cycle's revealed seed, the Solana blockhash it committed to, its odds
+ * snapshot, and every wallet's particles. Recomputes the randomness, every
+ * particle outcome, every payout, and the odds table itself from the physics.
  */
-import type { CycleAccount, PositionAccount } from "./accounts";
-import { BARRIER_COUNT, ENERGY_LEVELS } from "./constants";
-import { computePayout, particleOutcomes, type ParticleOutcome } from "./math";
+import { decodeBase58, fromHex } from "./bytes";
+import { BARRIER_COUNT, ENERGY_LEVELS, type BarrierConfig, type EnergyLevel, type OddsTable } from "./constants";
+import { verifyCycleFairness } from "./fairness";
+import { computePayout, particleOutcomes, type Outcome } from "./math";
 import { transmissionPpb } from "./physics";
 
-export interface PositionVerification {
-  owner: string;
-  particles: ParticleOutcome[];
-  expectedSuccesses: number[][];
-  recordedSuccesses: number[][];
-  expectedNominal: bigint;
-  expectedPayout: bigint | null;
-  matches: boolean;
+export interface PublishedCycle {
+  id: bigint;
+  barriers: BarrierConfig[];
+  levels: EnergyLevel[];
+  odds: OddsTable;
+  emissionBudget: bigint;
+  totalNominal: bigint;
+  outcome: Outcome;
+  seedCommitment: string;
+  serverSeed: string | null;
+  entropyBlockhash: string | null;
+  randomness: string | null;
+}
+
+export interface PublishedPosition {
+  wallet: string;
+  /** [barrier][level] */
+  particles: number[][];
+  successes: number[][];
+  nominalReward: bigint;
+  payout: bigint | null;
 }
 
 export interface CycleVerification {
-  cycleId: bigint;
-  /** Each snapshotted probability equals the physics model applied to the snapshotted barrier. */
   oddsMatchPhysics: boolean;
-  totalNominalMatches: boolean;
-  positions: PositionVerification[];
+  commitmentMatches: boolean | null;
+  randomnessMatches: boolean | null;
+  positions: { wallet: string; matches: boolean; expectedSuccesses: number[][]; expectedNominal: bigint; expectedPayout: bigint | null }[];
+  totalNominalMatches: boolean | null;
   allMatch: boolean;
 }
 
-export function verifyOdds(cycle: Pick<CycleAccount, "barriers" | "levels" | "odds">): boolean {
+export function verifyOdds(c: Pick<PublishedCycle, "barriers" | "levels" | "odds">): boolean {
   for (let b = 0; b < BARRIER_COUNT; b++) {
     for (let l = 0; l < ENERGY_LEVELS; l++) {
-      const ppb = transmissionPpb(cycle.barriers[b].heightMilli, cycle.barriers[b].widthMilli, cycle.levels[l].energyBps);
-      // The program evaluates the same expression in soft-float; allow one ppb of libm/V8 rounding difference.
-      if (ppb == null || Math.abs(ppb - cycle.odds.transmissionPpb[b][l]) > 1) return false;
+      const ppb = transmissionPpb(c.barriers[b].heightMilli, c.barriers[b].widthMilli, c.levels[l].energyBps);
+      if (ppb == null || ppb !== c.odds.transmissionPpb[b][l]) return false;
     }
   }
   return true;
 }
 
-export function verifyCycle(cycle: CycleAccount, positions: PositionAccount[]): CycleVerification {
-  const randomnessKnown = cycle.randomness.some((b) => b !== 0);
-  const out: PositionVerification[] = [];
-  let totalNominal = 0n;
+export function verifyCycle(cycle: PublishedCycle, positions: PublishedPosition[]): CycleVerification {
+  const oddsMatchPhysics = verifyOdds(cycle);
+  const revealed = !!(cycle.serverSeed && cycle.entropyBlockhash && cycle.randomness);
+  const fairness = revealed
+    ? verifyCycleFairness({ id: cycle.id, seedCommitment: cycle.seedCommitment, serverSeed: cycle.serverSeed!, entropyBlockhash: cycle.entropyBlockhash!, randomness: cycle.randomness! })
+    : null;
+  const randomness = revealed ? fromHex(cycle.randomness!) : null;
 
-  for (const p of positions) {
-    const particles: ParticleOutcome[] = [];
-    const successes = Array.from({ length: BARRIER_COUNT }, () => Array(ENERGY_LEVELS).fill(0) as number[]);
+  let total = 0n;
+  const out = positions.map((p) => {
+    const expectedSuccesses = Array.from({ length: BARRIER_COUNT }, () => Array(ENERGY_LEVELS).fill(0) as number[]);
     let nominal = 0n;
-    if (randomnessKnown) {
+    if (randomness) {
+      const owner = decodeBase58(p.wallet);
       for (let b = 0; b < BARRIER_COUNT; b++) {
         for (let l = 0; l < ENERGY_LEVELS; l++) {
           const n = p.particles[b][l];
           if (!n) continue;
-          const outs = particleOutcomes(cycle.randomness, cycle.id, p.owner.toBytes(), b, l, n, cycle.odds.transmissionPpb[b][l]);
-          particles.push(...outs);
-          successes[b][l] = outs.filter((o) => o.success).length;
-          nominal += BigInt(successes[b][l]) * cycle.odds.reward[b][l];
+          const s = particleOutcomes(randomness, cycle.id, owner, b, l, n, cycle.odds.transmissionPpb[b][l]).filter((o) => o.success).length;
+          expectedSuccesses[b][l] = s;
+          nominal += BigInt(s) * cycle.odds.reward[b][l];
         }
       }
     }
-    totalNominal += nominal;
-    const expectedPayout =
-      cycle.status === "settled" || cycle.status === "void"
-        ? computePayout({ outcome: cycle.outcome, totalNominal: cycle.totalNominal, emissionBudget: cycle.emissionBudget, positionNominal: nominal })
-        : null;
-    const settledMatches =
-      !p.settled || (successes.every((row, b) => row.every((s, l) => s === p.successes[b][l])) && nominal === p.nominalReward);
-    const paidMatches = !p.claimed || expectedPayout == null || expectedPayout === p.tokensPaid;
-    out.push({
-      owner: p.owner.toBase58(),
-      particles,
-      expectedSuccesses: successes,
-      recordedSuccesses: p.successes,
-      expectedNominal: nominal,
-      expectedPayout,
-      matches: settledMatches && paidMatches,
-    });
-  }
+    total += nominal;
+    const expectedPayout = randomness ? computePayout({ outcome: cycle.outcome, totalNominal: cycle.totalNominal, emissionBudget: cycle.emissionBudget, positionNominal: nominal }) : null;
+    const matches =
+      !randomness ||
+      (expectedSuccesses.every((row, b) => row.every((s, l) => s === p.successes[b][l])) &&
+        nominal === p.nominalReward &&
+        (p.payout == null || p.payout === expectedPayout));
+    return { wallet: p.wallet, matches, expectedSuccesses, expectedNominal: nominal, expectedPayout };
+  });
 
-  const oddsMatchPhysics = verifyOdds(cycle);
-  // Positions that already claimed are closed onchain, so the sum only covers
-  // what is still open; the total can be checked exactly once none are closed.
-  const totalNominalMatches = cycle.status !== "settled" || cycle.claims > 0 || cycle.totalNominal === totalNominal;
+  const totalNominalMatches = randomness ? total === cycle.totalNominal : null;
   return {
-    cycleId: cycle.id,
     oddsMatchPhysics,
-    totalNominalMatches,
+    commitmentMatches: fairness?.commitmentMatches ?? null,
+    randomnessMatches: fairness?.randomnessMatches ?? null,
     positions: out,
-    allMatch: oddsMatchPhysics && totalNominalMatches && out.every((p) => p.matches),
+    totalNominalMatches,
+    allMatch: oddsMatchPhysics && fairness?.commitmentMatches !== false && fairness?.randomnessMatches !== false && totalNominalMatches !== false && out.every((p) => p.matches),
   };
 }

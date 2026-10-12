@@ -36,4 +36,3 @@ export function parseSolToLamports(input: string): bigint | null {
 
 export const shortKey = (key: string, n = 4) => (key.length <= n * 2 + 1 ? key : `${key.slice(0, n)}…${key.slice(-n)}`);
 
-export const toHex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
