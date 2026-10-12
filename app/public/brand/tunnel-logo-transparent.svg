@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="tn-barrier" x1="0" y1="3" x2="0" y2="29" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#885BFF" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#885BFF"/>
+      <stop offset="1" stop-color="#885BFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tn-wave" x1="2" y1="0" x2="30" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00D9FF" stop-opacity="0.2"/>
+      <stop offset="0.45" stop-color="#00D9FF"/>
+      <stop offset="0.62" stop-color="#2864FF"/>
+      <stop offset="1" stop-color="#EAFBFF"/>
+    </linearGradient>
+    <radialGradient id="tn-glow" cx="16" cy="16" r="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1628"/>
+      <stop offset="1" stop-color="#05070B"/>
+    </radialGradient>
+  </defs>
+  <g transform="translate(5 5) scale(0.6875)">
+    <rect x="14.6" y="3" width="3.4" height="26" rx="1" fill="url(#tn-barrier)"/>
+    <path d="M2 16c1.6 0 2.1-7 3.9-7s2.4 14 4.3 14 2.4-10.5 4.1-10.5c.5 0 .8.9 1 3.5M18.6 16c.4-1.3.8-2 1.4-2 1 0 1.3 4 2.4 4s1.3-3 2.3-3 1.2 2 2 2 1.3-1 1.3-1" stroke="url(#tn-wave)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="28.8" cy="16" r="1.6" fill="#EAFBFF"/>
+  </g>
+</svg>
