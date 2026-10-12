@@ -44,6 +44,10 @@ model ProtocolConfig {
   bettingPaused     Boolean  @default(true)
   /** Newest house-account signature already scanned for deposits. */
   depositCursor     String?
+  /** Set from /admin. The engine's RPC (may carry an API key; never sent to browsers). SOLANA_RPC_URL overrides it. */
+  engineRpcUrl      String?
+  /** Set from /admin. The RPC browsers use for balances and deposits. NEXT_PUBLIC_RPC_URL is the fallback. */
+  publicRpcUrl      String?
   updatedAt         DateTime @updatedAt
 }
 

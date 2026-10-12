@@ -20,7 +20,7 @@
 ## Infrastructure
 - ⬜ GitHub repo, Render Blueprint deployed (web, engine, Postgres)
 - ⬜ Dedicated mainnet RPC
-- ⬜ `ADMIN_WALLETS`, `TUNNEL_MINT`, `reward-wallet.json` secret file set
+- ⬜ /admin → Settings: engine RPC, public RPC, `$TUNNEL` mint; `reward-wallet.json` secret file set
 - ⬜ Reward wallet has SOL for fees; alerts configured
 - ⬜ Render Postgres backups enabled (owed rewards live in the database)
 

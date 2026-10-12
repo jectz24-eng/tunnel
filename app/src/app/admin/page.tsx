@@ -8,7 +8,7 @@ export default function AdminPage() {
   return (
     <>
       <PageHeader eyebrow="Operations · admin only" title={<>Control room.</>}>
-        Cycles, settlements, payouts and the audit log. Only wallets listed in ADMIN_WALLETS can sign in here; every change is logged.
+        Cycles, settlements, payouts and the audit log. Password protected; every change is logged.
       </PageHeader>
       <AdminView />
     </>

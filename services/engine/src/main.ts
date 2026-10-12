@@ -5,7 +5,7 @@
  *   - balance loop: publish the reward wallet's on-chain balances
  */
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { Connection, type PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { ensureConfig } from "@tunnel/core";
 import { getDb } from "@tunnel/db";
 import { createServer } from "node:http";
@@ -15,7 +15,7 @@ import { scanDeposits } from "./deposits";
 import { log } from "./log";
 import { reconcileSending, resolveTokenProgram, sendRequested, type PayoutContext } from "./payouts";
 
-const conn = new Connection(config.rpcUrl, "confirmed");
+let conn: Connection;
 const db = getDb();
 const health = { startedAt: new Date().toISOString(), lastCycleTick: 0, lastPayoutTick: 0, lastError: null as string | null, cycle: "" };
 
@@ -40,9 +40,33 @@ function every(name: string, ms: number, fn: () => Promise<void>) {
   );
 }
 
+/** RPC and mint: env vars pin them, otherwise the settings saved from /admin. */
+async function settings() {
+  const c = await db.protocolConfig.findUnique({ where: { id: 1 }, select: { engineRpcUrl: true, tunnelMint: true } });
+  return {
+    rpcUrl: config.rpcUrl ?? c?.engineRpcUrl ?? config.defaultRpcUrl,
+    mint: config.tunnelMint ?? (c?.tunnelMint ? new PublicKey(c.tunnelMint) : null),
+  };
+}
+
 async function main() {
+  // Bind the health port first: hosts such as Render wait for an open port before marking a deploy live.
+  createServer((req, res) => {
+    const stale = Date.now() - health.lastCycleTick > Math.max(30_000, config.tickMs * 10);
+    res.writeHead(stale ? 503 : 200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: !stale, ...health }));
+  }).listen(config.healthPort, () => log.info({ port: config.healthPort }, "health endpoint up"));
+
   await ensureConfig(db);
-  log.info({ rpc: config.rpcUrl, rewardWallet: config.rewardWallet?.publicKey.toBase58() ?? null, mint: config.tunnelMint?.toBase58() ?? null }, "engine starting");
+  const active = await settings();
+  conn = new Connection(active.rpcUrl, "confirmed");
+  log.info({ rpc: new URL(active.rpcUrl).origin, rewardWallet: config.rewardWallet?.publicKey.toBase58() ?? null, mint: active.mint?.toBase58() ?? null }, "engine starting");
+
+  // A changed RPC or mint needs fresh connections and payout context: exit and let the host restart the engine.
+  every("settings", config.settingsTickMs, async () => {
+    const now = await settings();
+    if (now.rpcUrl !== active.rpcUrl || now.mint?.toBase58() !== active.mint?.toBase58()) void shutdown("settings changed in /admin; restarting to apply");
+  });
 
   if (config.enableCycles) {
     every("cycles", config.tickMs, async () => {
@@ -59,15 +83,15 @@ async function main() {
     });
   }
 
-  if (!config.rewardWallet || !config.tunnelMint) {
-    log.warn("REWARD_WALLET_KEYPAIR or TUNNEL_MINT not set: payouts disabled (claims will queue)");
+  if (!config.rewardWallet || !active.mint) {
+    log.warn("REWARD_WALLET_KEYPAIR or the $TUNNEL mint (/admin or TUNNEL_MINT) not set: payouts disabled (claims will queue)");
   } else {
-    const tokenProgram = await resolveTokenProgram(conn, config.tunnelMint);
+    const tokenProgram = await resolveTokenProgram(conn, active.mint);
     const ctx: PayoutContext = {
       conn,
       db,
       wallet: config.rewardWallet,
-      mint: config.tunnelMint,
+      mint: active.mint,
       tokenProgram,
       maxPayoutTokens: config.maxPayoutTokens,
       minFeeLamports: config.minFeeLamports,
@@ -81,12 +105,6 @@ async function main() {
     every("balances", config.balanceTickMs, () => publishBalances(ctx.wallet.publicKey, ctx.mint, tokenProgram));
     every("deposits", config.depositTickMs, () => scanDeposits({ conn, db, house: ctx.wallet.publicKey, mint: ctx.mint, tokenProgram }));
   }
-
-  createServer((req, res) => {
-    const stale = Date.now() - health.lastCycleTick > Math.max(30_000, config.tickMs * 10);
-    res.writeHead(stale ? 503 : 200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: !stale, ...health }));
-  }).listen(config.healthPort, () => log.info({ port: config.healthPort }, "health endpoint up"));
 }
 
 async function publishBalances(wallet: PublicKey, mint: PublicKey, tokenProgram: PublicKey) {
@@ -98,15 +116,16 @@ async function publishBalances(wallet: PublicKey, mint: PublicKey, tokenProgram:
   await db.protocolConfig.update({ where: { id: 1 }, data: { rewardWalletLamports: BigInt(lamports), rewardWalletTokens: tokens } });
 }
 
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
-  process.on(sig, async () => {
-    log.info({ sig }, "shutting down");
-    stopping = true;
-    await Promise.allSettled(loops);
-    await db.$disconnect();
-    process.exit(0);
-  });
+async function shutdown(reason: string) {
+  if (stopping) return;
+  log.info({ reason }, "shutting down");
+  stopping = true;
+  await Promise.allSettled(loops);
+  await db.$disconnect();
+  process.exit(0);
 }
+
+for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => void shutdown(sig));
 
 main().catch((e) => {
   log.fatal({ err: String(e) }, "engine failed to start");

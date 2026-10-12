@@ -39,11 +39,9 @@ services:
         generateValue: true
       - key: NEXT_PUBLIC_CLUSTER
         value: mainnet-beta
-      # A dedicated mainnet RPC (Helius, Triton, QuickNode…). Used by browsers for balances only.
-      - key: NEXT_PUBLIC_RPC_URL
-        sync: false
-      # Comma-separated wallet addresses allowed into /admin.
-      - key: ADMIN_WALLETS
+      # RPC URLs and the $TUNNEL mint are set on /admin → Settings (stored in the database).
+      # scrypt hash of the /admin password, from `npm run admin:password-hash -- '<password>'`.
+      - key: ADMIN_PASSWORD_HASH
         sync: false
 
   # A web service only because the free plan has no workers; it serves engine health on $PORT.
@@ -60,10 +58,7 @@ services:
         fromDatabase:
           name: tunnel-db
           property: connectionString
-      - key: SOLANA_RPC_URL
-        sync: false
-      - key: TUNNEL_MINT
-        sync: false
+      # SOLANA_RPC_URL / TUNNEL_MINT are optional here: when unset, the engine uses /admin → Settings.
       # Upload the reward-wallet keypair as Secret File "reward-wallet.json".
       # It holds the $TUNNEL mining reserve and a little SOL for transfer fees.
       - key: REWARD_WALLET_KEYPAIR

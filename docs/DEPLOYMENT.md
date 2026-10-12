@@ -22,7 +22,7 @@ npm run dev                                             # http://localhost:3000
 NEXT_PUBLIC_CLUSTER=localnet
 NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8899
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres
-ADMIN_WALLETS=<your wallet>
+ADMIN_PASSWORD_HASH=<npm run admin:password-hash -- '<password>'>
 NEXT_PUBLIC_LOCAL_TEST_WALLET=true      # optional in-browser burner wallet (localnet only)
 ```
 
@@ -58,8 +58,8 @@ Every script refuses to run against mainnet without `--confirm-mainnet`.
 ### 2.2 Render
 
 1. Render → **New → Blueprint** → select the repo. It creates `tunnel-db`, `tunnel-web`, `tunnel-engine` from `render.yaml`.
-2. `tunnel-web` env: `NEXT_PUBLIC_RPC_URL` (your RPC), `ADMIN_WALLETS` (your wallet).
-3. `tunnel-engine` env: `SOLANA_RPC_URL`, `TUNNEL_MINT`. **Secret Files** → add `reward-wallet.json` with the file's contents.
+2. `tunnel-web` env: `ADMIN_PASSWORD_HASH` (output of `npm run admin:password-hash -- '<password>'`).
+3. After the first deploy, sign in at `/admin` with the password and fill **Settings**: engine RPC, public RPC, `$TUNNEL` mint (the engine restarts itself to apply them). `tunnel-engine` **Secret Files** → add `reward-wallet.json` with the file's contents.
 4. Deploy. Migrations run before the web service starts. `/api/health` should show `db: up`, `engineOnline: true`, `paused: true`.
 
 ### 2.3 Fund and launch
@@ -69,7 +69,7 @@ DATABASE_URL=<Render external DB URL> npm run setup:fund -- --reward-wallet <REW
 ```
 
 This transfers the reserve on-chain and records it so cycles can budget it.
-Then sign in at `/admin` with your wallet and press **Resume mining**, or run
+Then sign in at `/admin` with the admin password and press **Resume mining**, or run
 `npm run admin -- resume`. Optional: `npm run setup:token -- … --revoke` was not run above;
 revoke the mint authority when the supply is final.
 

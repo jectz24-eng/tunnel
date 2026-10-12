@@ -1,9 +1,7 @@
 "use client";
 
-import { useWallet } from "@solana/wallet-adapter-react";
 import { formatSol, formatTunnel, shortKey } from "@tunnel/sdk";
 import { useState } from "react";
-import { useWalletAuth } from "@/components/WalletAuth";
 import { Badge, Button, Empty, Panel, PanelHeader } from "@/components/ui";
 import { explorerAddress, explorerTx } from "@/lib/config";
 import { refreshMatching, usePoll } from "@/lib/poll";
@@ -20,17 +18,18 @@ interface Overview {
   payoutQueue: { id: string; wallet: string; amount: string; status: string; attempts: number; txSignature: string | null; error: string | null; createdAt: string }[];
   failedPayouts: { id: string; wallet: string; amount: string; error: string | null; createdAt: string }[];
   recentEvents: { id: string; name: string; wallet: string | null; createdAt: string }[];
+  settings: { engineRpcUrl: string | null; publicRpcUrl: string | null; tunnelMint: string | null };
 }
 
+const field = "h-9 w-full rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs";
+
 /**
- * Operations console. Requires a Sign-In With Solana session whose wallet is
- * listed in ADMIN_WALLETS (enforced server-side on every request).
+ * Operations console. Requires the admin password; the server checks the
+ * resulting HttpOnly session cookie on every request.
  */
 export function AdminView() {
-  const { publicKey } = useWallet();
-  const auth = useWalletAuth();
   const overview = usePoll<{ status: number; body: { available?: boolean; data?: Overview; error?: string } }>(
-    publicKey && auth.status === "verified" ? "admin:overview" : null,
+    "admin:overview",
     async () => {
       const r = await fetch("/api/admin", { cache: "no-store" });
       return { status: r.status, body: await r.json() };
@@ -42,6 +41,28 @@ export function AdminView() {
   const [minBet, setMinBet] = useState("");
   const [maxBet, setMaxBet] = useState("");
   const [maxWin, setMaxWin] = useState("");
+  const [password, setPassword] = useState("");
+  const [engineRpc, setEngineRpc] = useState("");
+  const [publicRpc, setPublicRpc] = useState("");
+  const [mint, setMint] = useState("");
+
+  const signIn = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await fetch("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg({ ok: false, text: j.error ?? `HTTP ${r.status}` });
+      setPassword("");
+      refreshMatching("admin:");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const signOut = async () => {
+    await fetch("/api/admin/login", { method: "DELETE" });
+    refreshMatching("admin:");
+  };
 
   const act = async (body: Record<string, unknown>, label: string) => {
     setBusy(true);
@@ -57,20 +78,33 @@ export function AdminView() {
     }
   };
 
-  if (!publicKey) return <Empty title="Connect an admin wallet">The operations console is only available to TUNNEL operators.</Empty>;
-  if (auth.status !== "verified")
+  if (overview.data?.status === 401)
     return (
-      <Empty title="Verify the admin wallet">
-        <Button className="mt-3" variant="primary" onClick={() => void auth.signIn()}>
-          {auth.status === "signing" ? "Sign in your wallet…" : "Sign the login message"}
-        </Button>
-      </Empty>
+      <div className="mx-auto max-w-sm px-4 py-16">
+        <Panel brackets>
+          <PanelHeader title="Admin sign-in" />
+          <form
+            className="space-y-3 p-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void signIn();
+            }}
+          >
+            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" aria-label="Admin password" className="h-10 w-full rounded-lg border border-line bg-bg-2 px-3 text-sm" />
+            <Button type="submit" variant="primary" disabled={busy || !password}>
+              {busy ? "Checking…" : "Sign in"}
+            </Button>
+            {msg && !msg.ok && <div className="text-xs text-red">{msg.text}</div>}
+          </form>
+        </Panel>
+      </div>
     );
   if (overview.data && overview.data.status !== 200) return <Empty title="Access denied">{overview.data.body.error ?? `HTTP ${overview.data.status}`}</Empty>;
   const o = overview.data?.body?.data;
   if (!o) return <Empty title={overview.data?.body.available === false ? "Database unavailable" : "Loading operations data…"} />;
   const c = o.config;
   const k = o.casino;
+  const st = o.settings;
   const tok = (v: unknown) => (v == null ? "—" : formatTunnel(BigInt(v as string), 0));
 
   return (
@@ -203,6 +237,44 @@ export function AdminView() {
           </div>
         </Panel>
         <Panel>
+          <PanelHeader title="Settings" right={<Badge tone="amber">logged</Badge>} />
+          <form
+            className="space-y-4 p-5 text-sm"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const body: Record<string, string> = { action: "settings" };
+              if (engineRpc) body.engineRpcUrl = engineRpc;
+              if (publicRpc) body.publicRpcUrl = publicRpc;
+              if (mint) body.tunnelMint = mint;
+              void act(body, "Settings").then(() => {
+                setEngineRpc("");
+                setPublicRpc("");
+                setMint("");
+              });
+            }}
+          >
+            <label className="block">
+              <span className="label mb-1.5 block">Engine RPC URL</span>
+              <input type="password" autoComplete="off" value={engineRpc} onChange={(e) => setEngineRpc(e.target.value)} placeholder={st.engineRpcUrl ? "set (hidden) · type to replace" : "https://…"} className={field} />
+              <span className="mt-1 block text-[11px] text-faint">Used by the engine for payouts and deposits. May include an API key; never sent to browsers.</span>
+            </label>
+            <label className="block">
+              <span className="label mb-1.5 block">Public RPC URL</span>
+              <input value={publicRpc} onChange={(e) => setPublicRpc(e.target.value)} placeholder={st.publicRpcUrl ?? "https://…"} className={field} />
+              <span className="mt-1 block text-[11px] text-faint">Used by players&apos; browsers. Visible to everyone, so use a key restricted to this site&apos;s domain.</span>
+            </label>
+            <label className="block">
+              <span className="label mb-1.5 block">$TUNNEL mint</span>
+              <input value={mint} onChange={(e) => setMint(e.target.value)} placeholder={st.tunnelMint ?? "mint address"} className={field} />
+              <span className="mt-1 block text-[11px] text-faint">Locked while players hold balances or withdrawals are pending.</span>
+            </label>
+            <Button type="submit" size="sm" disabled={busy || !(engineRpc || publicRpc || mint)}>
+              Save settings
+            </Button>
+            <p className="text-[11px] leading-relaxed text-faint">The engine restarts within ~15 s to apply a new engine RPC or mint. SOLANA_RPC_URL and TUNNEL_MINT env vars, when set, take priority.</p>
+          </form>
+        </Panel>
+        <Panel>
           <PanelHeader title="Addresses" />
           <dl className="space-y-2 p-5 font-mono text-[11px]">
             <div className="flex justify-between gap-2">
@@ -213,11 +285,12 @@ export function AdminView() {
               <dt className="text-muted">$TUNNEL mint</dt>
               <dd className="break-all text-right">{c.tunnelMint ?? "—"}</dd>
             </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-muted">signed in</dt>
-              <dd className="break-all text-right">{publicKey.toBase58()}</dd>
-            </div>
           </dl>
+          <div className="px-5 pb-5">
+            <Button size="sm" onClick={() => void signOut()}>
+              Sign out
+            </Button>
+          </div>
         </Panel>
       </div>
     </div>

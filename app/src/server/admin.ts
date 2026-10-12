@@ -1,21 +1,26 @@
 import "server-only";
+import { scryptSync, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { SESSION_COOKIE, readSession } from "./session";
+import { ADMIN_COOKIE, readAdminSession } from "./session";
 
-/** Wallets allowed to operate TUNNEL, from ADMIN_WALLETS (comma-separated public addresses). */
-export function adminWallets(): Set<string> {
-  return new Set((process.env.ADMIN_WALLETS ?? "").split(",").map((s) => s.trim()).filter(Boolean));
-}
+/** Actor recorded in the audit log for changes made from /admin. */
+export const ADMIN_ACTOR = "admin";
 
 /**
- * Admin authorization: the Sign-In With Solana session (an HttpOnly cookie
- * issued only after verifying a wallet signature) must belong to a wallet
- * listed in ADMIN_WALLETS.
+ * Checks a password against ADMIN_PASSWORD_HASH, formatted `scrypt:<N>:<salt b64>:<hash b64>`
+ * (`npm run admin:password-hash -- <password>` prints one; no `$`, which .env files would expand).
+ * Returns null when no hash is configured.
  */
+export function checkAdminPassword(password: string): boolean | null {
+  const [kind, n, salt, hash] = (process.env.ADMIN_PASSWORD_HASH ?? "").split(":");
+  if (kind !== "scrypt" || !n || !salt || !hash) return null;
+  const want = Buffer.from(hash, "base64");
+  const got = scryptSync(password, Buffer.from(salt, "base64"), want.length, { N: Number(n), maxmem: 256 * 1024 * 1024 });
+  return timingSafeEqual(got, want);
+}
+
+/** Admin authorization: an HttpOnly session cookie issued only after the admin password was verified. */
 export function requireAdmin(req: NextRequest): { ok: true; wallet: string } | { ok: false; status: number; error: string } {
-  const wallet = readSession(req.cookies.get(SESSION_COOKIE)?.value);
-  if (!wallet) return { ok: false, status: 401, error: "sign in with an admin wallet" };
-  if (adminWallets().size === 0) return { ok: false, status: 503, error: "ADMIN_WALLETS is not configured" };
-  if (!adminWallets().has(wallet)) return { ok: false, status: 403, error: "this wallet is not an admin" };
-  return { ok: true, wallet };
+  if (!readAdminSession(req.cookies.get(ADMIN_COOKIE)?.value)) return { ok: false, status: 401, error: "admin password required" };
+  return { ok: true, wallet: ADMIN_ACTOR };
 }

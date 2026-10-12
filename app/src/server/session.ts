@@ -65,3 +65,18 @@ export function readSession(cookie: string | undefined): string | null {
   if (!safeEq(tag, mac(`${address}.${exp}`)) || Number(exp) < Date.now()) return null;
   return address;
 }
+
+const ADMIN_TTL_MS = 12 * 60 * 60_000;
+export const ADMIN_COOKIE = "tunnel_admin";
+
+/** Admin session after a correct password. Its MAC domain differs from wallet sessions, so one cannot stand in for the other. */
+export function issueAdminSession() {
+  const exp = Date.now() + ADMIN_TTL_MS;
+  return { value: `${exp}.${mac(`admin|${exp}`)}`, maxAge: ADMIN_TTL_MS / 1000 };
+}
+
+export function readAdminSession(cookie: string | undefined): boolean {
+  if (!cookie) return false;
+  const [exp, tag] = cookie.split(".");
+  return !!exp && !!tag && safeEq(tag, mac(`admin|${exp}`)) && Number(exp) >= Date.now();
+}

@@ -6,6 +6,7 @@ import { requireAdmin } from "@/server/admin";
 import { indexed, json } from "@/server/http";
 import { protocolErrorResponse } from "@/server/protocol";
 import { adminOverview } from "@/server/queries";
+import { readSettings, saveSettings } from "@/server/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = requireAdmin(req);
   if (!auth.ok) return json({ error: auth.error }, { status: auth.status });
-  return indexed((db) => adminOverview(db));
+  return indexed(async (db) => ({ ...(await adminOverview(db)), settings: await readSettings(db) }));
 }
 
 type Action =
@@ -23,9 +24,10 @@ type Action =
   | { action: "emission"; tokensPerCycle: string }
   | { action: "energy"; perCycle: number }
   | { action: "betting"; open: boolean }
-  | { action: "betLimits"; minBet: string; maxBet: string; maxWinBps: number };
+  | { action: "betLimits"; minBet: string; maxBet: string; maxWinBps: number }
+  | { action: "settings"; engineRpcUrl?: string; publicRpcUrl?: string; tunnelMint?: string };
 
-/** Admin actions. Every change is written to the ProtocolEvent audit log with the admin wallet. */
+/** Admin actions. Every change is written to the ProtocolEvent audit log. */
 export async function POST(req: NextRequest) {
   const auth = requireAdmin(req);
   if (!auth.ok) return json({ error: auth.error }, { status: auth.status });
@@ -60,8 +62,13 @@ export async function POST(req: NextRequest) {
         await setBetLimits(db, { bettingPaused: !body.open }, auth.wallet);
         break;
       case "betLimits": {
-        if (!/^d{1,12}$/.test(String(body.minBet)) || !/^d{1,12}$/.test(String(body.maxBet))) return json({ error: "whole $TUNNEL amounts" }, { status: 400 });
+        if (!/^\d{1,12}$/.test(String(body.minBet)) || !/^\d{1,12}$/.test(String(body.maxBet))) return json({ error: "whole $TUNNEL amounts" }, { status: 400 });
         await setBetLimits(db, { minBet: BigInt(body.minBet) * TUNNEL_UNIT, maxBet: BigInt(body.maxBet) * TUNNEL_UNIT, maxWinBps: Math.floor(Number(body.maxWinBps)) }, auth.wallet);
+        break;
+      }
+      case "settings": {
+        const err = await saveSettings(db, body, auth.wallet);
+        if (err) return json({ error: err }, { status: 400 });
         break;
       }
       default:

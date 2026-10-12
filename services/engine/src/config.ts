@@ -9,13 +9,18 @@ function keypair(path: string | undefined): Keypair | null {
 }
 
 export const config = {
-  rpcUrl: process.env.SOLANA_RPC_URL ?? "http://127.0.0.1:8899",
+  /** Env pins the RPC; otherwise it comes from the /admin setting (ProtocolConfig.engineRpcUrl). */
+  rpcUrl: process.env.SOLANA_RPC_URL || null,
+  defaultRpcUrl: "http://127.0.0.1:8899",
   /**
    * Holds the $TUNNEL mining reserve and pays transfer fees. The only secret
    * key in the system; lives only on the engine (a Render secret file).
    */
   rewardWallet: keypair(process.env.REWARD_WALLET_KEYPAIR),
+  /** Env pins the mint; otherwise it comes from the /admin setting (ProtocolConfig.tunnelMint). */
   tunnelMint: process.env.TUNNEL_MINT ? new PublicKey(process.env.TUNNEL_MINT) : null,
+  /** How often to check /admin settings; a change restarts the engine (the host restarts the process). */
+  settingsTickMs: Number(process.env.ENGINE_SETTINGS_TICK_MS ?? 10_000),
   tickMs: Number(process.env.ENGINE_TICK_MS ?? 2_000),
   payoutTickMs: Number(process.env.ENGINE_PAYOUT_TICK_MS ?? 4_000),
   balanceTickMs: Number(process.env.ENGINE_BALANCE_TICK_MS ?? 10_000),

@@ -23,7 +23,8 @@
     "setup:token": "tsx scripts/create-token.ts",
     "setup:reward-wallet": "tsx scripts/reward-wallet.ts",
     "setup:fund": "tsx scripts/fund-reserve.ts",
-    "admin": "tsx scripts/admin.ts"
+    "admin": "tsx scripts/admin.ts",
+    "admin:password-hash": "tsx scripts/admin-password-hash.ts"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
