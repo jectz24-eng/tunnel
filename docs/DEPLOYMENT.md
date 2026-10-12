@@ -89,3 +89,18 @@ revoke the mint authority when the supply is final.
 | Payout above cap | Waits in the queue; raise `ENGINE_MAX_PAYOUT_TOKENS` after review. |
 | Suspected bug | Pause mining. Claims and payouts continue. |
 | Database loss | Restore Render backup. Owed rewards live only in the database: backups are essential. |
+
+## 5. Real-network test (devnet)
+
+Verified on Solana devnet with a production build of the site (`next build && next start`) and the engine:
+
+```bash
+# keys/devnet-operator.json funded with ~1 devnet SOL (https://faucet.solana.com)
+SOLANA_RPC_URL=https://api.devnet.solana.com DATABASE_URL=... npx tsx scripts/devnet-setup.ts
+# run the engine with REWARD_WALLET_KEYPAIR=keys/devnet-reward-wallet.json and the printed TUNNEL_MINT
+BASE_URL=<site> SOLANA_RPC_URL=https://api.devnet.solana.com PLAYER_KEYPAIR=keys/devnet-player.json npx tsx scripts/e2e-player.ts --deposit 200
+```
+
+`e2e-player.ts` plays like a user (wallet sign-in, on-chain deposit, five shots, seed reveal and recomputation of every shot, withdrawal confirmed on-chain) and works against any cluster; mainnet needs `--confirm-mainnet`.
+
+**Funding the vault:** always use `npm run setup:fund` (or record the transfer with `recordReserveFunding`). Transfers recorded as reserve funding, and any later transfer from a wallet that has funded the vault, are never credited as player deposits. Don't play from the funding wallet.

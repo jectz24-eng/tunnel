@@ -150,6 +150,12 @@ export async function creditDeposit(db: Db, d: { wallet: string; amount: bigint;
   if (d.amount <= 0n) return false;
   try {
     return await db.$transaction(async (tx) => {
+      // Vault funding is not a player deposit: skip transfers recorded as reserve funding,
+      // and anything sent by a wallet that has funded the vault.
+      const funding = await tx.$queryRaw<{ n: bigint }[]>`
+        SELECT COUNT(*)::bigint AS n FROM "ProtocolEvent"
+        WHERE "name" = 'ReserveFunded' AND ("wallet" = ${d.wallet} OR "data"->>'txSignature' = ${d.txSignature})`;
+      if (BigInt(funding[0]?.n ?? 0n) > 0n) return false;
       await tx.deposit.create({ data: d });
       await tx.$executeRaw`
         INSERT INTO "Account" ("wallet", "balance", "deposited", "updatedAt") VALUES (${d.wallet}, ${d.amount}, ${d.amount}, NOW())

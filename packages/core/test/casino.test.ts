@@ -2,7 +2,7 @@
 import type { PrismaClient } from "@tunnel/db";
 import { TUNNEL_UNIT, VOLATILITY, hashServerSeed, resolveBet, tunnelToPlain, withdrawalMessage } from "@tunnel/sdk";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { creditDeposit, ensureConfig, failPayout, placeBet, requestWithdrawal, rotateSeed, setBetLimits } from "../src";
+import { creditDeposit, ensureConfig, failPayout, placeBet, recordReserveFunding, requestWithdrawal, rotateSeed, setBetLimits } from "../src";
 import { nonce, signer, startDb } from "./harness";
 
 let db: PrismaClient;
@@ -38,6 +38,14 @@ describe("deposits", () => {
     expect(await creditDeposit(db, { wallet: a.wallet, amount: 50n * T, txSignature: "same", slot: 1n })).toBe(true);
     expect(await creditDeposit(db, { wallet: a.wallet, amount: 50n * T, txSignature: "same", slot: 1n })).toBe(false);
     expect(await balance(a.wallet)).toBe(50n * T);
+  });
+
+  it("never credits vault funding as a player deposit", async () => {
+    const operator = signer();
+    await recordReserveFunding(db, 1_000n * T, "fund-tx", operator.wallet);
+    expect(await creditDeposit(db, { wallet: operator.wallet, amount: 1_000n * T, txSignature: "fund-tx", slot: 1n })).toBe(false);
+    expect(await creditDeposit(db, { wallet: operator.wallet, amount: 5n * T, txSignature: "later-top-up", slot: 2n })).toBe(false);
+    expect(await db.account.findUnique({ where: { wallet: operator.wallet } })).toBeNull();
   });
 });
 
