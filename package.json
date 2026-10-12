@@ -8,7 +8,8 @@
     "packages/sdk",
     "packages/db",
     "app",
-    "services/keeper"
+    "packages/core",
+    "services/engine"
   ],
   "scripts": {
     "dev": "npm run dev -w app",

@@ -1,29 +1,28 @@
 {
-  "name": "@tunnel/keeper",
+  "name": "@tunnel/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Indexer + permissionless round crank for the TUNNEL program",
+  "description": "Server-authoritative TUNNEL protocol: deployments, cycles, settlement, claims",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "start": "tsx src/main.ts",
-    "dev": "tsx watch src/main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@solana/web3.js": "1.99.0",
     "@tunnel/db": "*",
     "@tunnel/sdk": "*",
-    "dotenv": "^17.2.0",
-    "pino": "^10.0.0"
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
-    "@coral-xyz/anchor": "0.32.1",
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-socket": "0.2.11",
-    "@prisma/adapter-pg": "7.10.0",
+    "@solana/web3.js": "1.99.0",
     "@types/node": "^24.0.0",
-    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.0.3"
   }

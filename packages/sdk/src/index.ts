@@ -5,3 +5,4 @@ export * from "./physics";
 export * from "./fairness";
 export * from "./format";
 export * from "./verify";
+export * from "./serde";
