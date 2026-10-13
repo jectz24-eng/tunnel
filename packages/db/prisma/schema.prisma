@@ -48,6 +48,12 @@ model ProtocolConfig {
   engineRpcUrl      String?
   /** Set from /admin. The RPC browsers use for balances and deposits. NEXT_PUBLIC_RPC_URL is the fallback. */
   publicRpcUrl      String?
+  /** Published by the engine: X25519 public key (base64) that /admin seals the reward-wallet key to. */
+  sealPublicKey     String?
+  /** Set from /admin: reward-wallet secret key sealed to sealPublicKey (only the engine can open it). */
+  sealedRewardWallet String?
+  /** Public address of the sealed reward wallet (claimed by the browser, checked by the engine). */
+  sealedRewardWalletAddress String?
   updatedAt         DateTime @updatedAt
 }
 

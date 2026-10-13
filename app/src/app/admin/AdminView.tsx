@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Badge, Button, Empty, Panel, PanelHeader } from "@/components/ui";
 import { explorerAddress, explorerTx } from "@/lib/config";
 import { refreshMatching, usePoll } from "@/lib/poll";
+import { sealRewardWallet } from "@/lib/sealWallet";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Overview {
@@ -18,7 +19,14 @@ interface Overview {
   payoutQueue: { id: string; wallet: string; amount: string; status: string; attempts: number; txSignature: string | null; error: string | null; createdAt: string }[];
   failedPayouts: { id: string; wallet: string; amount: string; error: string | null; createdAt: string }[];
   recentEvents: { id: string; name: string; wallet: string | null; createdAt: string }[];
-  settings: { engineRpcUrl: string | null; publicRpcUrl: string | null; tunnelMint: string | null };
+  settings: {
+    engineRpcUrl: string | null;
+    publicRpcUrl: string | null;
+    tunnelMint: string | null;
+    sealPublicKey: string | null;
+    rewardWalletSet: string | null;
+    rewardWalletActive: string | null;
+  };
 }
 
 const field = "h-9 w-full rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs";
@@ -45,6 +53,7 @@ export function AdminView() {
   const [engineRpc, setEngineRpc] = useState("");
   const [publicRpc, setPublicRpc] = useState("");
   const [mint, setMint] = useState("");
+  const [walletKey, setWalletKey] = useState("");
 
   const signIn = async () => {
     setBusy(true);
@@ -242,14 +251,23 @@ export function AdminView() {
             className="space-y-4 p-5 text-sm"
             onSubmit={(e) => {
               e.preventDefault();
-              const body: Record<string, string> = { action: "settings" };
+              const body: Record<string, unknown> = { action: "settings" };
               if (engineRpc) body.engineRpcUrl = engineRpc;
               if (publicRpc) body.publicRpcUrl = publicRpc;
               if (mint) body.tunnelMint = mint;
+              if (walletKey) {
+                try {
+                  body.rewardWallet = sealRewardWallet(walletKey, st.sealPublicKey!);
+                } catch (err) {
+                  setMsg({ ok: false, text: (err as Error).message });
+                  return;
+                }
+              }
               void act(body, "Settings").then(() => {
                 setEngineRpc("");
                 setPublicRpc("");
                 setMint("");
+                setWalletKey("");
               });
             }}
           >
@@ -268,10 +286,27 @@ export function AdminView() {
               <input value={mint} onChange={(e) => setMint(e.target.value)} placeholder={st.tunnelMint ?? "mint address"} className={field} />
               <span className="mt-1 block text-[11px] text-faint">Locked while players hold balances or withdrawals are pending.</span>
             </label>
-            <Button type="submit" size="sm" disabled={busy || !(engineRpc || publicRpc || mint)}>
+            <label className="block">
+              <span className="label mb-1.5 block">Reward wallet (vault) secret key</span>
+              <textarea
+                value={walletKey}
+                onChange={(e) => setWalletKey(e.target.value)}
+                disabled={!st.sealPublicKey}
+                autoComplete="off"
+                spellCheck={false}
+                rows={2}
+                placeholder={!st.sealPublicKey ? "engine offline or ENGINE_SEAL_SECRET missing" : st.rewardWalletSet ? `set: ${shortKey(st.rewardWalletSet)} · paste to replace` : "[12, 34, …] or base58 private key"}
+                className="w-full rounded-lg border border-line bg-bg-2 px-2 py-1.5 font-mono text-xs [-webkit-text-security:disc]"
+              />
+              <span className="mt-1 block text-[11px] leading-relaxed text-faint">
+                Encrypted in this browser so only the engine can read it; the site and database never see it. Active vault: {st.rewardWalletActive ? shortKey(st.rewardWalletActive) : "none"}
+                {st.rewardWalletSet && st.rewardWalletActive !== st.rewardWalletSet ? ` (switching to ${shortKey(st.rewardWalletSet)})` : ""}. Move the vault&apos;s $TUNNEL and SOL before switching wallets.
+              </span>
+            </label>
+            <Button type="submit" size="sm" disabled={busy || !(engineRpc || publicRpc || mint || walletKey)}>
               Save settings
             </Button>
-            <p className="text-[11px] leading-relaxed text-faint">The engine restarts within ~15 s to apply a new engine RPC or mint. SOLANA_RPC_URL and TUNNEL_MINT env vars, when set, take priority.</p>
+            <p className="text-[11px] leading-relaxed text-faint">The engine restarts within ~15 s to apply a new engine RPC, mint or wallet. SOLANA_RPC_URL, TUNNEL_MINT and a REWARD_WALLET_KEYPAIR file, when set, take priority.</p>
           </form>
         </Panel>
         <Panel>

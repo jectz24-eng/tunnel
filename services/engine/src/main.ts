@@ -5,7 +5,7 @@
  *   - balance loop: publish the reward wallet's on-chain balances
  */
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, type Keypair } from "@solana/web3.js";
 import { ensureConfig } from "@tunnel/core";
 import { getDb } from "@tunnel/db";
 import { createServer } from "node:http";
@@ -14,9 +14,11 @@ import { cycleTick } from "./cycles";
 import { scanDeposits } from "./deposits";
 import { log } from "./log";
 import { reconcileSending, resolveTokenProgram, sendRequested, type PayoutContext } from "./payouts";
+import { openSealedWallet, sealKeyPair } from "./sealed";
 
 let conn: Connection;
 const db = getDb();
+const sealBox = sealKeyPair(config.sealSecret);
 const health = { startedAt: new Date().toISOString(), lastCycleTick: 0, lastPayoutTick: 0, lastError: null as string | null, cycle: "" };
 
 let stopping = false;
@@ -40,13 +42,34 @@ function every(name: string, ms: number, fn: () => Promise<void>) {
   );
 }
 
-/** RPC and mint: env vars pin them, otherwise the settings saved from /admin. */
+/** RPC, mint and reward wallet: env vars / the keypair file pin them, otherwise the settings saved from /admin. */
 async function settings() {
-  const c = await db.protocolConfig.findUnique({ where: { id: 1 }, select: { engineRpcUrl: true, tunnelMint: true } });
+  const c = await db.protocolConfig.findUnique({
+    where: { id: 1 },
+    select: { engineRpcUrl: true, tunnelMint: true, sealedRewardWallet: true, sealedRewardWalletAddress: true },
+  });
   return {
     rpcUrl: config.rpcUrl ?? c?.engineRpcUrl ?? config.defaultRpcUrl,
     mint: config.tunnelMint ?? (c?.tunnelMint ? new PublicKey(c.tunnelMint) : null),
+    sealed: config.rewardWallet ? null : (c?.sealedRewardWallet ?? null),
+    sealedAddress: c?.sealedRewardWalletAddress ?? null,
   };
+}
+
+function rewardWallet(s: Awaited<ReturnType<typeof settings>>): Keypair | null {
+  if (config.rewardWallet) return config.rewardWallet;
+  if (!s.sealed) return null;
+  if (!sealBox) {
+    log.error("a reward wallet is set in /admin but ENGINE_SEAL_SECRET is missing; payouts stay off");
+    return null;
+  }
+  try {
+    return openSealedWallet(s.sealed, s.sealedAddress, sealBox);
+  } catch (e) {
+    health.lastError = String(e);
+    log.error({ err: String(e) }, "cannot use the reward wallet set in /admin; payouts stay off");
+    return null;
+  }
 }
 
 async function main() {
@@ -58,14 +81,19 @@ async function main() {
   }).listen(config.healthPort, () => log.info({ port: config.healthPort }, "health endpoint up"));
 
   await ensureConfig(db);
+  // /admin seals the reward-wallet key to this public key.
+  await db.protocolConfig.update({ where: { id: 1 }, data: { sealPublicKey: sealBox ? Buffer.from(sealBox.publicKey).toString("base64") : null } });
   const active = await settings();
   conn = new Connection(active.rpcUrl, "confirmed");
-  log.info({ rpc: new URL(active.rpcUrl).origin, rewardWallet: config.rewardWallet?.publicKey.toBase58() ?? null, mint: active.mint?.toBase58() ?? null }, "engine starting");
+  const wallet = rewardWallet(active);
+  log.info({ rpc: new URL(active.rpcUrl).origin, rewardWallet: wallet?.publicKey.toBase58() ?? null, mint: active.mint?.toBase58() ?? null }, "engine starting");
 
-  // A changed RPC or mint needs fresh connections and payout context: exit and let the host restart the engine.
+  // A changed RPC, mint or reward wallet needs fresh connections and payout context: exit and let the host restart the engine.
   every("settings", config.settingsTickMs, async () => {
     const now = await settings();
-    if (now.rpcUrl !== active.rpcUrl || now.mint?.toBase58() !== active.mint?.toBase58()) void shutdown("settings changed in /admin; restarting to apply");
+    if (now.rpcUrl !== active.rpcUrl || now.mint?.toBase58() !== active.mint?.toBase58() || now.sealed !== active.sealed) {
+      void shutdown("settings changed in /admin; restarting to apply");
+    }
   });
 
   if (config.enableCycles) {
@@ -83,20 +111,30 @@ async function main() {
     });
   }
 
-  if (!config.rewardWallet || !active.mint) {
-    log.warn("REWARD_WALLET_KEYPAIR or the $TUNNEL mint (/admin or TUNNEL_MINT) not set: payouts disabled (claims will queue)");
+  if (!wallet || !active.mint) {
+    log.warn("reward wallet (/admin or REWARD_WALLET_KEYPAIR) or $TUNNEL mint (/admin or TUNNEL_MINT) not set: payouts disabled (claims will queue)");
   } else {
     const tokenProgram = await resolveTokenProgram(conn, active.mint);
     const ctx: PayoutContext = {
       conn,
       db,
-      wallet: config.rewardWallet,
+      wallet,
       mint: active.mint,
       tokenProgram,
       maxPayoutTokens: config.maxPayoutTokens,
       minFeeLamports: config.minFeeLamports,
     };
-    await db.protocolConfig.update({ where: { id: 1 }, data: { rewardWallet: ctx.wallet.publicKey.toBase58(), tunnelMint: ctx.mint.toBase58() } });
+    const address = wallet.publicKey.toBase58();
+    const prior = await db.protocolConfig.findUnique({ where: { id: 1 }, select: { rewardWallet: true } });
+    const data: { rewardWallet: string; tunnelMint: string; depositCursor?: string | null } = { rewardWallet: address, tunnelMint: ctx.mint.toBase58() };
+    if (prior?.rewardWallet && prior.rewardWallet !== address) {
+      // New vault: the deposit cursor belonged to the old one. Start from the new account's latest
+      // transaction so its earlier history is never credited as player deposits.
+      const ata = getAssociatedTokenAddressSync(ctx.mint, wallet.publicKey, false, tokenProgram);
+      data.depositCursor = (await conn.getSignaturesForAddress(ata, { limit: 1 }, "finalized"))[0]?.signature ?? null;
+      log.warn({ from: prior.rewardWallet, to: address }, "reward wallet changed; deposit scanning restarts from now");
+    }
+    await db.protocolConfig.update({ where: { id: 1 }, data });
     every("payouts", config.payoutTickMs, async () => {
       await reconcileSending(ctx);
       await sendRequested(ctx);

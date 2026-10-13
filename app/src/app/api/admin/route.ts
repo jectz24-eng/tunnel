@@ -25,7 +25,7 @@ type Action =
   | { action: "energy"; perCycle: number }
   | { action: "betting"; open: boolean }
   | { action: "betLimits"; minBet: string; maxBet: string; maxWinBps: number }
-  | { action: "settings"; engineRpcUrl?: string; publicRpcUrl?: string; tunnelMint?: string };
+  | { action: "settings"; engineRpcUrl?: string; publicRpcUrl?: string; tunnelMint?: string; rewardWallet?: { sealed?: unknown; address?: unknown } };
 
 /** Admin actions. Every change is written to the ProtocolEvent audit log. */
 export async function POST(req: NextRequest) {

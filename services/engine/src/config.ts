@@ -18,9 +18,11 @@ export const config = {
   defaultRpcUrl: "http://127.0.0.1:8899",
   /**
    * Holds the $TUNNEL mining reserve and pays transfer fees. The only secret
-   * key in the system; lives only on the engine (a Render secret file).
+   * key in the system. A keypair file (Render secret file) takes priority;
+   * otherwise the key sealed from /admin is opened with ENGINE_SEAL_SECRET.
    */
   rewardWallet: keypair(process.env.REWARD_WALLET_KEYPAIR),
+  sealSecret: process.env.ENGINE_SEAL_SECRET || undefined,
   /** Env pins the mint; otherwise it comes from the /admin setting (ProtocolConfig.tunnelMint). */
   tunnelMint: process.env.TUNNEL_MINT ? new PublicKey(process.env.TUNNEL_MINT) : null,
   /** How often to check /admin settings; a change restarts the engine (the host restarts the process). */

@@ -17,13 +17,13 @@
     "@solana/spl-token": "0.4.15",
     "@tunnel/sdk": "*",
     "dotenv": "^17.2.0",
-    "pino": "^10.0.0"
+    "pino": "^10.0.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-socket": "0.2.11",
     "@prisma/adapter-pg": "7.10.0",
-    "tweetnacl": "^1.0.3",
     "@types/node": "^24.0.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3",

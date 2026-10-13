@@ -2,7 +2,8 @@
 # Deploy: push this repo to GitHub, then Render → New → Blueprint → select the repo.
 #
 # Values marked `sync: false` are entered in the Render dashboard (never committed).
-# The engine's reward-wallet keypair is uploaded as a Secret File named reward-wallet.json.
+# The reward-wallet key is set on /admin (sealed so only the engine can read it) or uploaded
+# to the engine as Secret File reward-wallet.json.
 # The web service never holds any key.
 #
 # FREE PLAN: free Postgres expires 30 days after creation (upgrade before then or lose
@@ -59,8 +60,12 @@ services:
           name: tunnel-db
           property: connectionString
       # SOLANA_RPC_URL / TUNNEL_MINT are optional here: when unset, the engine uses /admin → Settings.
-      # Upload the reward-wallet keypair as Secret File "reward-wallet.json".
-      # It holds the $TUNNEL mining reserve and a little SOL for transfer fees.
+      # The reward wallet holds the $TUNNEL reserve and a little SOL for fees. Set its key on
+      # /admin → Settings (sealed in the browser to this engine's key, derived from
+      # ENGINE_SEAL_SECRET, which only this service has), or upload it as Secret File
+      # "reward-wallet.json", which takes priority.
+      - key: ENGINE_SEAL_SECRET
+        generateValue: true
       - key: REWARD_WALLET_KEYPAIR
         value: /etc/secrets/reward-wallet.json
       # Payouts larger than this (whole $TUNNEL) wait for manual review.
