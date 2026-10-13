@@ -82,12 +82,14 @@ export async function saveSettings(
     if (v && rpcUrl(v)) return rpcUrl(v);
     data[key] = v || null;
   }
-  const mint = s.tunnelMint?.trim();
-  if (mint !== undefined && mint !== "") {
-    try {
-      new PublicKey(mint);
-    } catch {
-      return "not a valid mint address";
+  const mint = s.tunnelMint?.trim(); // "" removes the mint
+  if (mint !== undefined) {
+    if (mint) {
+      try {
+        new PublicKey(mint);
+      } catch {
+        return "not a valid mint address";
+      }
     }
     const current = await db.protocolConfig.findUnique({ where: { id: 1 }, select: { tunnelMint: true } });
     if (current?.tunnelMint && current.tunnelMint !== mint) {
@@ -96,9 +98,9 @@ export async function saveSettings(
         db.account.count({ where: { balance: { gt: 0 } } }),
         db.payout.count({ where: { status: { in: ["requested", "sending"] } } }),
       ]);
-      if (owed || pending) return "the mint cannot change while players hold balances or withdrawals are pending";
+      if (owed || pending) return `the mint cannot ${mint ? "change" : "be removed"} while players hold balances or withdrawals are pending`;
     }
-    data.tunnelMint = mint;
+    data.tunnelMint = mint || null;
   }
   if (!Object.keys(data).length) return "nothing to save";
   await db.$transaction([

@@ -281,11 +281,30 @@ export function AdminView() {
               <input value={publicRpc} onChange={(e) => setPublicRpc(e.target.value)} placeholder={st.publicRpcUrl ?? "https://…"} className={field} />
               <span className="mt-1 block text-[11px] text-faint">Used by players&apos; browsers. Visible to everyone, so use a key restricted to this site&apos;s domain.</span>
             </label>
-            <label className="block">
-              <span className="label mb-1.5 block">$TUNNEL mint</span>
-              <input value={mint} onChange={(e) => setMint(e.target.value)} placeholder={st.tunnelMint ?? "mint address"} className={field} />
-              <span className="mt-1 block text-[11px] text-faint">Locked while players hold balances or withdrawals are pending.</span>
-            </label>
+            <div>
+              <label htmlFor="admin-mint" className="label mb-1.5 block">
+                $TUNNEL mint
+              </label>
+              <div className="flex gap-2">
+                <input id="admin-mint" value={mint} onChange={(e) => setMint(e.target.value)} placeholder={st.tunnelMint ?? "mint address"} className={field} />
+                {st.tunnelMint && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() => {
+                      if (window.confirm(`Remove the $TUNNEL mint ${st.tunnelMint}? Deposits and withdrawals stop until a mint is set again.`)) {
+                        void act({ action: "settings", tunnelMint: "" }, "Mint removed");
+                      }
+                    }}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+              <span className="mt-1 block text-[11px] text-faint">Locked (change or remove) while players hold balances or withdrawals are pending.</span>
+            </div>
             <label className="block">
               <span className="label mb-1.5 block">Reward wallet (vault) secret key</span>
               <textarea
