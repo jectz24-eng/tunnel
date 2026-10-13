@@ -92,13 +92,14 @@ export async function saveSettings(
       }
     }
     const current = await db.protocolConfig.findUnique({ where: { id: 1 }, select: { tunnelMint: true } });
-    if (current?.tunnelMint && current.tunnelMint !== mint) {
-      // Balances and queued withdrawals are denominated in the current token.
+    // Balances and queued withdrawals are denominated in the current token, so a direct switch is refused.
+    // Removing is always allowed (operator decision); balances stay recorded for whatever mint is set next.
+    if (mint && current?.tunnelMint && current.tunnelMint !== mint) {
       const [owed, pending] = await Promise.all([
         db.account.count({ where: { balance: { gt: 0 } } }),
         db.payout.count({ where: { status: { in: ["requested", "sending"] } } }),
       ]);
-      if (owed || pending) return `the mint cannot ${mint ? "change" : "be removed"} while players hold balances or withdrawals are pending`;
+      if (owed || pending) return "the mint cannot change while players hold balances or withdrawals are pending";
     }
     data.tunnelMint = mint || null;
   }

@@ -292,7 +292,11 @@ export function AdminView() {
                     variant="danger"
                     disabled={busy}
                     onClick={() => {
-                      if (window.confirm(`Remove the $TUNNEL mint ${st.tunnelMint}? Deposits and withdrawals stop until a mint is set again.`)) {
+                      if (
+                        window.confirm(
+                          `Remove the $TUNNEL mint ${st.tunnelMint}? Deposits and withdrawals stop until a mint is set again, and existing player balances will be paid in whichever mint is set next.`,
+                        )
+                      ) {
                         void act({ action: "settings", tunnelMint: "" }, "Mint removed");
                       }
                     }}
@@ -301,7 +305,7 @@ export function AdminView() {
                   </Button>
                 )}
               </div>
-              <span className="mt-1 block text-[11px] text-faint">Locked (change or remove) while players hold balances or withdrawals are pending.</span>
+              <span className="mt-1 block text-[11px] text-faint">Changing to a different mint is locked while players hold balances or withdrawals are pending; removing is always allowed.</span>
             </div>
             <label className="block">
               <span className="label mb-1.5 block">Reward wallet (vault) secret key</span>
