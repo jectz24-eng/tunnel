@@ -21,10 +21,17 @@ function safeEq(a: string, b: string) {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-/** Stateless single-use-window nonce bound to the address and issue time. */
+const NONCE_RANDOM_HEX = 16;
+const nonceTag = (address: string, issuedAt: string) => createHmac("sha256", secret()).update(`${address}|${issuedAt}`).digest("hex");
+
+/**
+ * Stateless single-use-window nonce bound to the address and issue time:
+ * 16 random hex chars + the hex HMAC tag. Sign-In With Solana requires an
+ * alphanumeric nonce; wallets (Phantom) refuse to show the message otherwise.
+ */
 export function buildSignInMessage(address: string, origin: string) {
   const issuedAt = new Date().toISOString();
-  const nonce = `${randomBytes(9).toString("base64url")}.${mac(`${address}|${issuedAt}`)}`;
+  const nonce = `${randomBytes(NONCE_RANDOM_HEX / 2).toString("hex")}${nonceTag(address, issuedAt)}`;
   return [
     `${new URL(origin).host} wants you to sign in with your Solana account:`,
     address,
@@ -46,8 +53,8 @@ export function checkSignInMessage(message: string, address: string, origin: str
   const nonce = /^Nonce: (.+)$/m.exec(message)?.[1];
   const issuedAt = /^Issued At: (.+)$/m.exec(message)?.[1];
   if (!nonce || !issuedAt) return "malformed message";
-  const [, tag] = nonce.split(".");
-  if (!tag || !safeEq(tag, mac(`${address}|${issuedAt}`))) return "invalid nonce";
+  if (!/^[0-9a-f]+$/.test(nonce)) return "invalid nonce";
+  if (!safeEq(nonce.slice(NONCE_RANDOM_HEX), nonceTag(address, issuedAt))) return "invalid nonce";
   const age = Date.now() - Date.parse(issuedAt);
   if (!(age >= -30_000 && age <= NONCE_TTL_MS)) return "message expired";
   return null;
