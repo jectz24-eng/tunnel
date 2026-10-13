@@ -3,6 +3,7 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import { formatTunnel, shortKey } from "@tunnel/sdk";
 import Link from "next/link";
+import { SolscanLink } from "@/components/SolscanLink";
 import { useState } from "react";
 import { Empty, Panel, Unavailable, cx } from "@/components/ui";
 import { useIndexed } from "@/lib/api";
@@ -66,9 +67,12 @@ export function LeaderboardView() {
                 <div className="font-mono text-[11px] tracking-[0.2em]" style={{ color: ["#EAFBFF", "#00D9FF", "#885BFF"][i] }}>
                   #{r.rank}
                 </div>
-                <Link href={`/profile/${r.wallet}`} className="mt-3 block font-mono text-lg hover:text-cyan">
-                  {shortKey(r.wallet, 6)}
-                </Link>
+                <div className="mt-3 flex items-center gap-2">
+                  <Link href={`/profile/${r.wallet}`} className="font-mono text-lg hover:text-cyan">
+                    {shortKey(r.wallet, 6)}
+                  </Link>
+                  <SolscanLink address={r.wallet} />
+                </div>
                 <div className="mt-4 font-mono text-[28px] tabular">{c.value(r)}</div>
                 <div className="text-[11px] text-faint">{c.unit}</div>
               </Panel>
@@ -90,10 +94,13 @@ export function LeaderboardView() {
                   <tr key={r.wallet} className={cx("border-b border-line-soft last:border-0", r.wallet === me && "bg-cyan/[0.05]")}>
                     <td className="px-5 py-3 font-mono text-xs text-muted">#{r.rank}</td>
                     <td className="px-5 py-3 font-mono text-xs">
-                      <Link href={`/profile/${r.wallet}`} className="hover:text-cyan">
-                        {shortKey(r.wallet, 6)}
-                      </Link>
-                      {r.wallet === me && <span className="ml-2 text-cyan">you</span>}
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <Link href={`/profile/${r.wallet}`} className="hover:text-cyan">
+                          {shortKey(r.wallet, 6)}
+                        </Link>
+                        {r.wallet === me && <span className="text-cyan">you</span>}
+                        <SolscanLink address={r.wallet} />
+                      </div>
                     </td>
                     <td className="px-5 py-3 font-mono text-xs tabular">{c.value(r)}</td>
                     <td className="px-5 py-3 font-mono text-xs tabular">{r.bets.toLocaleString()}</td>

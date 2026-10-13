@@ -2,6 +2,7 @@
 
 import { VOLATILITY, formatMultiplier, formatTunnel, shortKey } from "@tunnel/sdk";
 import Link from "next/link";
+import { SolscanLink } from "@/components/SolscanLink";
 import { useState } from "react";
 import { Hits } from "@/components/game/Panels";
 import { Button, Empty, Panel, Unavailable, cx } from "@/components/ui";
@@ -65,7 +66,7 @@ export function HistoryView({ wallet }: { wallet?: string }) {
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-line-soft text-left">
-                {["Shot", "Player", "Barrier", "Particles", "Bet", "Paid", "Time"].map((h) => (
+                {["Shot", "Player", "Barrier", "Particles", "Bet", "Paid", "Time", ""].map((h) => (
                   <th key={h} className="label px-4 py-3 font-normal">
                     {h}
                   </th>
@@ -84,9 +85,12 @@ export function HistoryView({ wallet }: { wallet?: string }) {
                       </Link>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-muted">
-                      <Link href={`/profile/${r.wallet}`} className="hover:text-cyan">
-                        {shortKey(r.wallet)}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/profile/${r.wallet}`} className="hover:text-cyan">
+                          {shortKey(r.wallet)}
+                        </Link>
+                        <SolscanLink address={r.wallet} />
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs" style={{ color: v.color }}>
                       {v.short} · {formatMultiplier(r.multiplierBps)}
@@ -102,6 +106,11 @@ export function HistoryView({ wallet }: { wallet?: string }) {
                     <td className="px-4 py-3 font-mono text-xs">{formatTunnel(BigInt(r.stake))}</td>
                     <td className={cx("px-4 py-3 font-mono text-xs", won ? "text-flare" : "text-muted")}>{formatTunnel(BigInt(r.payout))}</td>
                     <td className="px-4 py-3 font-mono text-[11px] text-faint">{new Date(r.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td className="px-4 py-3 text-right font-mono text-[11px]">
+                      <Link href={`/history/bet/${r.id}`} className="text-muted hover:text-cyan">
+                        Verify →
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}

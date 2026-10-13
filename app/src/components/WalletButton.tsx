@@ -102,7 +102,7 @@ export function WalletButton({ className }: { className?: string }) {
               Deposit &amp; withdraw
             </Link>
             <a href={explorerAddress(key)} target="_blank" rel="noreferrer" className="block rounded-lg px-3 py-2 text-sm text-fg-2 hover:bg-panel-2 hover:text-fg">
-              View on Explorer
+              View on Solscan
             </a>
             <MenuItem onClick={() => navigator.clipboard?.writeText(key)}>Copy address</MenuItem>
             <MenuItem

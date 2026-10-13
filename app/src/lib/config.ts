@@ -15,16 +15,17 @@ export const clusterLabel: Record<Cluster, string> = {
   "mainnet-beta": "Mainnet",
 };
 
+/** Explorer links go to Solscan. */
 export function explorerTx(sig: string) {
-  return `https://explorer.solana.com/tx/${sig}${clusterQuery()}`;
+  return `https://solscan.io/tx/${sig}${clusterQuery()}`;
 }
 
 export function explorerAddress(address: string) {
-  return `https://explorer.solana.com/address/${address}${clusterQuery()}`;
+  return `https://solscan.io/account/${address}${clusterQuery()}`;
 }
 
 export function explorerBlock(slot: bigint | number) {
-  return `https://explorer.solana.com/block/${slot}${clusterQuery()}`;
+  return `https://solscan.io/block/${slot}${clusterQuery()}`;
 }
 
 function clusterQuery() {

@@ -2,6 +2,7 @@
 
 import { VOLATILITY, formatMultiplier, formatTunnel, shortKey } from "@tunnel/sdk";
 import Link from "next/link";
+import { SolscanLink } from "@/components/SolscanLink";
 import { useState } from "react";
 import { getJson } from "@/lib/api";
 import type { BetView, GameEngine } from "@/lib/game";
@@ -36,8 +37,9 @@ export function BetRow({ b, unit, href }: { b: BetView; unit: string; href?: str
     </>
   );
   return href ? (
-    <Link href={href} className="flex items-center gap-3 px-5 py-2.5 hover:bg-panel-2/60">
+    <Link href={href} title="Verify this shot" className="flex items-center gap-3 px-5 py-2.5 hover:bg-panel-2/60">
       {inner}
+      <span className="font-mono text-[10px] text-faint">verify →</span>
     </Link>
   ) : (
     <div className="flex items-center gap-3 px-5 py-2.5">{inner}</div>
@@ -141,9 +143,11 @@ export function LiveBets({ unit }: { unit: string }) {
         const v = VOLATILITY[r.volatility];
         const net = BigInt(r.payout) - BigInt(r.stake);
         return (
-          <li key={r.id}>
-            <Link href={`/history/bet/${r.id}`} className="flex items-center gap-3 px-5 py-2.5 text-[12px] hover:bg-panel-2/60">
-              <span className="w-24 truncate font-mono text-fg-2">{shortKey(r.wallet)}</span>
+          <li key={r.id} className="flex items-center gap-2 pl-5 text-[12px] hover:bg-panel-2/60">
+            <span className="w-24 truncate font-mono text-fg-2">{shortKey(r.wallet)}</span>
+            <SolscanLink address={r.wallet} />
+            <Link href={`/history/bet/${r.id}`} title="Verify this shot" className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-1 pr-5">
+
               <span className="w-14 font-mono text-[11px]" style={{ color: v.color }}>
                 {v.short}
               </span>
@@ -154,6 +158,7 @@ export function LiveBets({ unit }: { unit: string }) {
                 {net > 0n ? "+" : ""}
                 {formatTunnel(net)} <span className="text-[10px] text-faint">{unit}</span>
               </span>
+              <span className="font-mono text-[10px] text-faint">verify →</span>
             </Link>
           </li>
         );
