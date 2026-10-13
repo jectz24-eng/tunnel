@@ -87,7 +87,7 @@ describe("bets", () => {
     expect(acct.balance).toBe(10n * T - acct.wagered + acct.returned);
   });
 
-  it("enforces balance, limits, max win, particle count and pause", async () => {
+  it("enforces balance, limits, particle count and pause, but not the vault balance", async () => {
     const a = signer();
     expect(await code(placeBet(db, a.wallet, { volatility: 0, amount: 1n * T, count: 1 }))).toBe("balance");
     await deposit(a.wallet, 5_000n * T);
@@ -95,8 +95,8 @@ describe("bets", () => {
     expect(await code(placeBet(db, a.wallet, { volatility: 0, amount: 2_000n * T, count: 1 }))).toBe("bad_bet");
     expect(await code(placeBet(db, a.wallet, { volatility: 0, amount: 1n * T, count: 0 }))).toBe("bad_bet");
     expect(await code(placeBet(db, a.wallet, { volatility: 3, amount: 1n * T, count: 1 }))).toBe("bad_bet");
-    await db.protocolConfig.update({ where: { id: 1 }, data: { rewardWalletTokens: 6_000n * T } }); // tiny free bankroll
-    expect(await code(placeBet(db, a.wallet, { volatility: 2, amount: 100n * T, count: 5 }))).toBe("max_win");
+    await db.protocolConfig.update({ where: { id: 1 }, data: { rewardWalletTokens: 0n } }); // empty vault: bets still go through
+    await expect(placeBet(db, a.wallet, { volatility: 2, amount: 100n * T, count: 5 })).resolves.toBeTruthy();
     await setBetLimits(db, { bettingPaused: true }, "admin");
     expect(await code(placeBet(db, a.wallet, { volatility: 0, amount: 1n * T, count: 1 }))).toBe("paused");
   });

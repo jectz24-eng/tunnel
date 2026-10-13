@@ -13,7 +13,7 @@ const SECTIONS: [string, string, string][] = [
   ["the-shots", "The shots", "Each particle is an independent shot at the barrier you choose. Low, medium and high barriers have fixed win chances and multipliers, shown before you fire. Bet size and particle count are up to you within the table limits."],
   ["the-fairness", "Provably fair", "Every shot is decided by HMAC-SHA256 of a server seed (its hash is shown before you play), your own client seed, and a counter. Rotate your seed at any time to reveal the old one and verify every past shot in your browser."],
   ["the-practice", "Practice", "The Laboratory runs the exact same barriers, multipliers and draw function with free practice credits, so you can test strategies before using real $TUNNEL."],
-  ["the-limits", "Table limits", "Minimum and maximum bets keep the accelerator healthy for everyone. A single shot's maximum win is also capped to a share of the vault, shown in the accelerator before you fire."],
+  ["the-limits", "Table limits", "Minimum and maximum bets keep the accelerator healthy for everyone."],
 ];
 
 const RISKS = [

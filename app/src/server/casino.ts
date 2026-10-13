@@ -40,11 +40,11 @@ export async function casinoState(db: Db) {
   const engineOnline = !!cfg?.engineHeartbeat && Date.now() - cfg.engineHeartbeat.getTime() < 30_000;
   return {
     now: Date.now(),
-    bettingOpen: !limits.bettingPaused && engineOnline && limits.freeBankroll != null,
+    bettingOpen: !limits.bettingPaused && engineOnline,
     minBet: limits.minBet,
     maxBet: limits.maxBet,
-    /** Largest net win a single bet may have right now. */
-    maxWin: limits.freeBankroll == null ? null : (limits.freeBankroll * BigInt(limits.maxWinBps)) / 10_000n,
+    /** Wins are not capped against the vault balance. */
+    maxWin: null,
     depositAddress: cfg?.rewardWallet ?? null,
     tunnelMint: cfg?.tunnelMint ?? null,
     engineOnline,

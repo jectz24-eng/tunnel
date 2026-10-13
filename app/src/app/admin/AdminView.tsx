@@ -48,7 +48,6 @@ export function AdminView() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [minBet, setMinBet] = useState("");
   const [maxBet, setMaxBet] = useState("");
-  const [maxWin, setMaxWin] = useState("");
   const [password, setPassword] = useState("");
   const [engineRpc, setEngineRpc] = useState("");
   const [publicRpc, setPublicRpc] = useState("");
@@ -217,10 +216,9 @@ export function AdminView() {
             </div>
             <div>
               <div className="label mb-2">Table limits</div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <input value={minBet} onChange={(e) => setMinBet(e.target.value)} placeholder={`min ${tok(k.minBet)}`} className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs" />
                 <input value={maxBet} onChange={(e) => setMaxBet(e.target.value)} placeholder={`max ${tok(k.maxBet)}`} className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs" />
-                <input value={maxWin} onChange={(e) => setMaxWin(e.target.value)} placeholder={`max win ${k.maxWinBps / 100}%`} className="h-9 rounded-lg border border-line bg-bg-2 px-2 font-mono text-xs" />
               </div>
               <Button
                 size="sm"
@@ -232,7 +230,7 @@ export function AdminView() {
                       action: "betLimits",
                       minBet: minBet || String(BigInt(k.minBet) / 1_000_000n),
                       maxBet: maxBet || String(BigInt(k.maxBet) / 1_000_000n),
-                      maxWinBps: maxWin ? Math.round(Number(maxWin) * 100) : k.maxWinBps,
+                      maxWinBps: k.maxWinBps,
                     },
                     "Limits",
                   )
@@ -240,7 +238,7 @@ export function AdminView() {
               >
                 Update limits
               </Button>
-              <p className="mt-2 text-[11px] leading-relaxed text-faint">Bets per particle in whole $TUNNEL. Max win is the share (%) of the free bankroll one shot may win. Every change is logged.</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-faint">Bets per particle in whole $TUNNEL. Wins are not capped by the vault balance, so the max bet is the only size limit. Every change is logged.</p>
             </div>
             {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-line text-muted" : "border-red/30 text-red"}`}>{msg.text}</div>}
           </div>

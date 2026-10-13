@@ -85,11 +85,9 @@ export async function placeBet(db: Db, wallet: string, input: BetInput, now = ne
     const limits = await casinoLimits(tx);
     if (limits.bettingPaused) throw new ProtocolError("paused", "The accelerator is offline for a moment. Try again shortly.", 409);
     if (input.amount < limits.minBet || input.amount > limits.maxBet) throw new ProtocolError("bad_bet", "That amount is outside the bet limits.");
+    // No cap against the vault balance (operator decision): bets are limited only by min/max bet and
+    // particle count. Wins larger than the vault holds are credited; withdrawals wait until it is topped up.
     const stake = input.amount * BigInt(input.count);
-    const maxPayout = (stake * BigInt(v.multiplierBps)) / 10_000n;
-    if (limits.freeBankroll == null || maxPayout - stake > (limits.freeBankroll * BigInt(limits.maxWinBps)) / 10_000n) {
-      throw new ProtocolError("max_win", "That bet's maximum win is above the current limit. Lower the amount or particles.", 409);
-    }
 
     const [acct] = await tx.$queryRaw<{ balance: bigint }[]>`SELECT "balance" FROM "Account" WHERE "wallet" = ${wallet} FOR UPDATE`;
     if (!acct || BigInt(acct.balance) < stake) throw new ProtocolError("balance", "Not enough balance. Deposit $TUNNEL to keep firing.", 409);
