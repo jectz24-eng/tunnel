@@ -240,6 +240,31 @@ export function AdminView() {
               </Button>
               <p className="mt-2 text-[11px] leading-relaxed text-faint">Bets per particle in whole $TUNNEL. Wins are not capped by the vault balance, so the max bet is the only size limit. Every change is logged.</p>
             </div>
+            <div>
+              <div className="label mb-2">Reset</div>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                onClick={async () => {
+                  const typed = window.prompt("This permanently deletes every shot (History) and zeroes the Leaderboard. Balances, deposits and withdrawals stay.\n\nType RESET to confirm.");
+                  if (typed !== "RESET") return;
+                  setBusy(true);
+                  setMsg(null);
+                  try {
+                    const r = await fetch("/api/admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resetStats", confirm: typed }) });
+                    const j = await r.json().catch(() => ({}));
+                    setMsg(r.ok ? { ok: true, text: `Reset: deleted ${j.bets} shots, cleared stats for ${j.players} players` } : { ok: false, text: j.error ?? `HTTP ${r.status}` });
+                    refreshMatching("admin:");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Reset history &amp; leaderboard
+              </Button>
+              <p className="mt-2 text-[11px] leading-relaxed text-faint">Deletes all shots and zeroes leaderboard stats. Balances, deposits and withdrawals are kept. Cannot be undone.</p>
+            </div>
             {msg && <div className={`rounded-lg border px-3 py-2 text-xs ${msg.ok ? "border-line text-muted" : "border-red/30 text-red"}`}>{msg.text}</div>}
           </div>
         </Panel>

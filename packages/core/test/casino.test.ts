@@ -2,7 +2,7 @@
 import type { PrismaClient } from "@tunnel/db";
 import { TUNNEL_UNIT, VOLATILITY, hashServerSeed, resolveBet, tunnelToPlain, withdrawalMessage } from "@tunnel/sdk";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { creditDeposit, ensureConfig, failPayout, placeBet, recordReserveFunding, requestWithdrawal, rotateSeed, setBetLimits } from "../src";
+import { creditDeposit, ensureConfig, failPayout, placeBet, recordReserveFunding, requestWithdrawal, resetPlayStats, rotateSeed, setBetLimits } from "../src";
 import { nonce, signer, startDb } from "./harness";
 
 let db: PrismaClient;
@@ -99,6 +99,24 @@ describe("bets", () => {
     await expect(placeBet(db, a.wallet, { volatility: 2, amount: 100n * T, count: 5 })).resolves.toBeTruthy();
     await setBetLimits(db, { bettingPaused: true }, "admin");
     expect(await code(placeBet(db, a.wallet, { volatility: 0, amount: 1n * T, count: 1 }))).toBe("paused");
+  });
+
+  it("resets history and leaderboard stats but keeps balances, and betting continues", async () => {
+    const a = signer();
+    await deposit(a.wallet, 1_000n * T);
+    await placeBet(db, a.wallet, { volatility: 0, amount: 10n * T, count: 3 });
+    await placeBet(db, a.wallet, { volatility: 1, amount: 5n * T, count: 2 });
+    const before = await db.account.findUniqueOrThrow({ where: { wallet: a.wallet } });
+
+    expect(await resetPlayStats(db, "admin")).toEqual({ bets: 2, players: 1 });
+    expect(await db.bet.count()).toBe(0);
+    const after = await db.account.findUniqueOrThrow({ where: { wallet: a.wallet } });
+    expect([after.wagered, after.returned, after.bets, after.particles, after.hits, after.biggestWin]).toEqual([0n, 0n, 0, 0, 0, 0n]);
+    expect([after.balance, after.deposited, after.withdrawn]).toEqual([before.balance, before.deposited, before.withdrawn]);
+    expect(await db.protocolEvent.count({ where: { name: "StatsReset" } })).toBe(1);
+
+    await placeBet(db, a.wallet, { volatility: 0, amount: 10n * T, count: 1 }); // the seed nonce keeps counting: no collision
+    expect(await db.bet.count()).toBe(1);
   });
 
   it("uses the configured odds", () => {

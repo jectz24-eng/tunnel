@@ -305,7 +305,7 @@ export async function adminOverview(db: Db) {
     db.position.aggregate({ where: { settled: true, payout: { gt: 0 }, payoutId: null }, _sum: { payout: true }, _count: { _all: true } }),
     db.payout.findMany({ where: { status: { in: ["requested", "sending"] } }, orderBy: { id: "asc" }, take: 100 }),
     db.payout.findMany({ where: { status: "failed" }, orderBy: { id: "desc" }, take: 30 }),
-    db.protocolEvent.findMany({ where: { name: { in: ["ParamsUpdated", "MiningPaused", "MiningResumed", "ReserveFunded", "CycleVoided", "ClaimFailed", "BetLimitsUpdated", "WithdrawalFailed", "SettingsUpdated"] } }, orderBy: { id: "desc" }, take: 30 }),
+    db.protocolEvent.findMany({ where: { name: { in: ["ParamsUpdated", "MiningPaused", "MiningResumed", "ReserveFunded", "CycleVoided", "ClaimFailed", "BetLimitsUpdated", "WithdrawalFailed", "SettingsUpdated", "StatsReset"] } }, orderBy: { id: "desc" }, take: 30 }),
   ]);
   const [limits, accounts, betAgg] = await Promise.all([
     casinoLimits(db),

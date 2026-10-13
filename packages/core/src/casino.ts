@@ -212,3 +212,17 @@ export async function setBetLimits(db: Db, l: { minBet?: bigint; maxBet?: bigint
     db.protocolEvent.create({ data: { name: "BetLimitsUpdated", wallet: actor, data: { minBet: minBet.toString(), maxBet: maxBet.toString(), maxWinBps, bettingPaused: l.bettingPaused ?? c.bettingPaused } } }),
   ]);
 }
+
+/**
+ * Clears shot history and leaderboard stats: deletes every bet and zeroes the per-player play
+ * counters. Balances, deposits and withdrawals are untouched. Seed nonces keep counting, so
+ * new bets never collide with deleted ones.
+ */
+export async function resetPlayStats(db: Db, actor: string): Promise<{ bets: number; players: number }> {
+  return db.$transaction(async (tx) => {
+    const bets = (await tx.bet.deleteMany({})).count;
+    const players = (await tx.account.updateMany({ data: { wagered: 0n, returned: 0n, bets: 0, particles: 0, hits: 0, biggestWin: 0n } })).count;
+    await tx.protocolEvent.create({ data: { name: "StatsReset", wallet: actor, data: { bets, players } } });
+    return { bets, players };
+  });
+}
